@@ -22,3 +22,152 @@
 2026-04-06 18:54:26,341 - INFO - Running in DEMO MODE
 2026-04-06 18:54:26,342 - INFO - Connected to MT5. Account: 105965833, Balance: 100000.0
 2026-04-06 18:54:26,342 - INFO - Starting trading bot...
+2026-04-06 22:04:54,122 - INFO - Running in DEMO MODE
+2026-04-06 22:04:54,123 - INFO - Connected to MT5. Account: 105965833, Balance: 100000.0
+2026-04-06 22:04:54,123 - INFO - Starting trading bot...
+2026-04-06 22:16:21,449 - INFO - Running in DEMO MODE
+2026-04-06 22:16:21,450 - INFO - Connected to MT5. Account: 105965833, Balance: 100000.0
+2026-04-06 22:16:21,450 - INFO - Starting trading bot...
+2026-04-06 22:39:21,817 - INFO - Order placed: SELL 0.03 lots of XAUUSD at 4653.0, SL: 4655.0, TP: 4649.0
+2026-04-06 22:39:21,818 - INFO - Signal executed: SELL
+2026-04-06 22:41:22,042 - INFO - Order placed: SELL 0.03 lots of XAUUSD at 4654.5, SL: 4656.5, TP: 4650.5
+2026-04-06 22:41:22,042 - INFO - Signal executed: SELL
+2026-04-06 22:45:22,274 - INFO - Order placed: SELL 0.03 lots of XAUUSD at 4660.55, SL: 4662.55, TP: 4656.55
+2026-04-06 22:45:22,274 - INFO - Signal executed: SELL
+2026-04-06 22:46:22,511 - INFO - Order placed: SELL 0.03 lots of XAUUSD at 4663.0, SL: 4665.0, TP: 4659.0
+2026-04-06 22:46:22,511 - INFO - Signal executed: SELL
+2026-04-06 22:47:22,512 - INFO - Position opened: 1680720601 - XAUUSD SELL 0.03 lots at 4663.05
+2026-04-06 22:47:22,722 - INFO - Order placed: SELL 0.03 lots of XAUUSD at 4663.77, SL: 4665.77, TP: 4659.77
+2026-04-06 22:47:22,722 - INFO - Signal executed: SELL
+2026-04-06 22:48:22,723 - INFO - TRADE CLOSED: 1680720601 | XAUUSD SELL | Duration: 0:01:00.210568 | P/L: $0.00
+2026-04-06 22:48:22,723 - INFO - Max trades per day reached
+2026-04-06 22:48:22,724 - INFO - Risk limits triggered - pausing trading
+2026-04-06 22:53:22,724 - INFO - Max trades per day reached
+2026-04-06 22:53:22,725 - INFO - Risk limits triggered - pausing trading
+2026-04-06 22:58:22,725 - INFO - Max trades per day reached
+2026-04-06 22:58:22,725 - INFO - Risk limits triggered - pausing trading
+2026-04-06 23:03:22,726 - INFO - Max trades per day reached
+2026-04-06 23:03:22,726 - INFO - Risk limits triggered - pausing trading
+2026-04-06 23:08:22,727 - INFO - Max trades per day reached
+2026-04-06 23:08:22,727 - INFO - Risk limits triggered - pausing trading
+2026-04-06 23:13:22,728 - INFO - Max trades per day reached
+2026-04-06 23:13:22,728 - INFO - Risk limits triggered - pausing trading
+2026-04-06 23:18:22,729 - INFO - Max trades per day reached
+2026-04-06 23:18:22,729 - INFO - Risk limits triggered - pausing trading
+2026-04-06 23:23:22,730 - INFO - Max trades per day reached
+2026-04-06 23:23:22,730 - INFO - Risk limits triggered - pausing trading
+2026-04-06 23:28:22,731 - INFO - Max trades per day reached
+2026-04-06 23:28:22,731 - INFO - Risk limits triggered - pausing trading
+2026-04-06 23:33:22,731 - INFO - Max trades per day reached
+2026-04-06 23:33:22,731 - INFO - Risk limits triggered - pausing trading
+2026-04-06 23:38:22,732 - INFO - Max trades per day reached
+2026-04-06 23:38:22,732 - INFO - Risk limits triggered - pausing trading
+2026-04-06 23:43:22,733 - INFO - Max trades per day reached
+2026-04-06 23:43:22,733 - INFO - Risk limits triggered - pausing trading
+2026-04-06 23:48:22,733 - INFO - Max trades per day reached
+2026-04-06 23:48:22,734 - INFO - Risk limits triggered - pausing trading
+2026-04-06 23:53:22,734 - INFO - Max trades per day reached
+2026-04-06 23:53:22,734 - INFO - Risk limits triggered - pausing trading
+2026-04-06 23:58:22,735 - INFO - Max trades per day reached
+2026-04-06 23:58:22,735 - INFO - Risk limits triggered - pausing trading
+2026-04-07 00:03:22,962 - INFO - Order placed: SELL 0.03 lots of XAUUSD at 4655.72, SL: 4657.72, TP: 4651.72
+2026-04-07 00:03:22,962 - INFO - Signal executed: SELL
+2026-04-07 00:03:23,163 - INFO - Trailing stop updated for SELL position 1680901809: SL 4657.67
+2026-04-07 00:04:23,376 - INFO - Order placed: SELL 0.03 lots of XAUUSD at 4657.75, SL: 4659.75, TP: 4653.75
+2026-04-07 00:04:23,376 - INFO - Signal executed: SELL
+2026-04-07 00:05:23,377 - INFO - Position opened: 1680905554 - XAUUSD SELL 0.03 lots at 4657.75
+2026-04-07 00:05:23,587 - INFO - Order placed: SELL 0.03 lots of XAUUSD at 4657.01, SL: 4659.01, TP: 4653.01
+2026-04-07 00:05:23,587 - INFO - Signal executed: SELL
+2026-04-07 00:05:23,782 - INFO - Trailing stop updated for SELL position 1680905554: SL 4659.53
+2026-04-07 00:06:23,783 - INFO - Position opened: 1680908345 - XAUUSD SELL 0.03 lots at 4657.14
+2026-04-07 00:06:24,020 - INFO - Order placed: SELL 0.03 lots of XAUUSD at 4656.03, SL: 4658.03, TP: 4652.03
+2026-04-07 00:06:24,020 - INFO - Signal executed: SELL
+2026-04-07 00:06:24,216 - INFO - Trailing stop updated for SELL position 1680905554: SL 4658.74
+2026-04-07 00:06:24,410 - INFO - Trailing stop updated for SELL position 1680908345: SL 4658.93
+2026-04-07 00:07:24,411 - INFO - TRADE CLOSED: 1680905554 | XAUUSD SELL | Duration: 0:02:01.034262 | P/L: $0.00
+2026-04-07 00:07:24,411 - INFO - TRADE CLOSED: 1680908345 | XAUUSD SELL | Duration: 0:01:00.627899 | P/L: $0.00
+2026-04-07 00:07:24,620 - INFO - Order placed: SELL 0.03 lots of XAUUSD at 4659.7, SL: 4661.7, TP: 4655.7
+2026-04-07 00:07:24,620 - INFO - Signal executed: SELL
+2026-04-07 00:08:24,621 - INFO - Position opened: 1680912439 - XAUUSD SELL 0.03 lots at 4659.7
+2026-04-07 00:08:24,622 - INFO - Max trades per day reached
+2026-04-07 00:08:24,622 - INFO - Risk limits triggered - pausing trading
+2026-04-07 00:13:24,622 - INFO - TRADE CLOSED: 1680912439 | XAUUSD SELL | Duration: 0:05:00.000811 | P/L: $0.00
+2026-04-07 00:13:24,623 - INFO - Max trades per day reached
+2026-04-07 00:13:24,623 - INFO - Risk limits triggered - pausing trading
+2026-04-07 00:18:24,623 - INFO - Max trades per day reached
+2026-04-07 00:18:24,623 - INFO - Risk limits triggered - pausing trading
+2026-04-07 00:23:24,624 - INFO - Max trades per day reached
+2026-04-07 00:23:24,625 - INFO - Risk limits triggered - pausing trading
+2026-04-07 00:28:24,625 - INFO - Max trades per day reached
+2026-04-07 00:28:24,625 - INFO - Risk limits triggered - pausing trading
+2026-04-07 00:33:24,626 - INFO - Max trades per day reached
+2026-04-07 00:33:24,626 - INFO - Risk limits triggered - pausing trading
+2026-04-07 00:38:24,627 - INFO - Max trades per day reached
+2026-04-07 00:38:24,627 - INFO - Risk limits triggered - pausing trading
+2026-04-07 00:43:24,627 - INFO - Max trades per day reached
+2026-04-07 00:43:24,627 - INFO - Risk limits triggered - pausing trading
+2026-04-07 00:48:24,628 - INFO - Max trades per day reached
+2026-04-07 00:48:24,628 - INFO - Risk limits triggered - pausing trading
+2026-04-07 19:47:30,637 - INFO - Max trades per day reached
+2026-04-07 19:47:30,639 - INFO - Risk limits triggered - pausing trading
+2026-04-07 19:48:32,843 - INFO - Running in DEMO MODE
+2026-04-07 19:48:32,843 - INFO - Connected to MT5. Account: 105965833, Balance: 99962.32
+2026-04-07 19:48:32,844 - INFO - Starting trading bot...
+2026-04-07 19:50:17,185 - INFO - Running in DEMO MODE
+2026-04-07 19:50:17,185 - INFO - Connected to MT5. Account: 105965833, Balance: 99962.32
+2026-04-07 19:50:17,185 - INFO - Starting trading bot...
+2026-04-07 19:50:17,498 - INFO - Order placed: SELL 0.03 lots of XAUUSD at 4647.84, SL: 4649.84, TP: 4643.84
+2026-04-07 19:50:17,498 - INFO - Signal executed: SELL
+2026-04-07 19:56:16,192 - INFO - Running in DEMO MODE
+2026-04-07 19:56:16,192 - INFO - Connected to MT5. Account: 105965833, Balance: 99955.81
+2026-04-07 19:56:16,193 - INFO - Starting trading bot...
+2026-04-07 20:42:16,430 - INFO - Position size calculated: 33.32 lots (risk: $999.56, SL: 30 pips)
+2026-04-07 20:42:16,637 - INFO - Order placed: SELL 33.32 lots of XAUUSD at 4638.74, SL: 4641.74, TP: 4634.24
+2026-04-07 20:42:16,637 - INFO - Signal executed: SELL
+2026-04-07 20:43:16,638 - WARNING - Max drawdown limit reached: 11.13%
+2026-04-07 20:43:16,638 - INFO - Risk limits triggered - pausing trading
+2026-04-07 20:48:16,639 - INFO - Trading bot stopped
+2026-04-07 20:48:16,639 - INFO - MT5 connection closed
+2026-04-09 18:11:23,254 - INFO - Running in DEMO MODE
+2026-04-09 18:11:23,255 - INFO - Connected to MT5. Account: 105965833, Balance: 88826.93
+2026-04-09 18:11:23,255 - INFO - Starting trading bot...
+2026-04-09 18:12:23,308 - INFO - Position size calculated: 29.61 lots (risk: $888.27, SL: 30 pips)
+2026-04-09 18:12:23,517 - INFO - Order placed: BUY 29.61 lots of XAUUSD at 4741.5, SL: 4738.5, TP: 4746.0
+2026-04-09 18:12:23,517 - INFO - Signal executed: BUY
+2026-04-09 18:13:23,518 - INFO - Position opened: 1691994683 - XAUUSD BUY 29.61 lots at 4741.48
+2026-04-09 18:13:23,522 - INFO - Position size calculated: 29.61 lots (risk: $888.27, SL: 30 pips)
+2026-04-09 18:13:23,726 - INFO - Order placed: BUY 29.61 lots of XAUUSD at 4740.96, SL: 4737.96, TP: 4745.46
+2026-04-09 18:13:23,726 - INFO - Signal executed: BUY
+2026-04-09 18:14:23,726 - INFO - Position opened: 1691996546 - XAUUSD BUY 29.61 lots at 4740.99
+2026-04-09 18:14:23,731 - INFO - Position size calculated: 29.61 lots (risk: $888.27, SL: 30 pips)
+2026-04-09 18:14:23,731 - ERROR - Order failed: No money
+2026-04-09 18:14:23,731 - ERROR - Failed to execute signal
+2026-04-09 18:15:23,737 - INFO - Position size calculated: 29.61 lots (risk: $888.27, SL: 30 pips)
+2026-04-09 18:15:23,737 - ERROR - Order failed: No money
+2026-04-09 18:15:23,737 - ERROR - Failed to execute signal
+2026-04-09 18:16:23,742 - INFO - Position size calculated: 29.61 lots (risk: $888.27, SL: 30 pips)
+2026-04-09 18:16:23,742 - ERROR - Order failed: No money
+2026-04-09 18:16:23,742 - ERROR - Failed to execute signal
+2026-04-09 18:17:23,748 - INFO - Position size calculated: 29.61 lots (risk: $888.27, SL: 30 pips)
+2026-04-09 18:17:23,748 - ERROR - Order failed: No money
+2026-04-09 18:17:23,748 - ERROR - Failed to execute signal
+2026-04-09 18:18:23,753 - INFO - Position size calculated: 29.61 lots (risk: $888.27, SL: 30 pips)
+2026-04-09 18:18:23,754 - ERROR - Order failed: No money
+2026-04-09 18:18:23,754 - ERROR - Failed to execute signal
+2026-04-09 18:19:23,758 - INFO - Position size calculated: 29.61 lots (risk: $888.27, SL: 30 pips)
+2026-04-09 18:19:23,983 - INFO - Order placed: BUY 29.61 lots of XAUUSD at 4742.17, SL: 4739.17, TP: 4746.67
+2026-04-09 18:19:23,983 - INFO - Signal executed: BUY
+2026-04-09 18:19:24,178 - INFO - Trailing stop updated for BUY position 1691994683: SL 4738.91
+2026-04-09 18:19:24,373 - INFO - Trailing stop updated for BUY position 1691996546: SL 4738.89
+2026-04-09 18:20:24,374 - INFO - Position opened: 1692008358 - XAUUSD BUY 29.61 lots at 4742.17
+2026-04-09 18:20:24,379 - INFO - Position size calculated: 29.61 lots (risk: $888.27, SL: 30 pips)
+2026-04-09 18:20:24,586 - INFO - Order placed: BUY 29.61 lots of XAUUSD at 4745.58, SL: 4742.58, TP: 4750.08
+2026-04-09 18:20:24,586 - INFO - Signal executed: BUY
+2026-04-09 18:20:24,789 - INFO - Trailing stop updated for BUY position 1691994683: SL 4742.32
+2026-04-09 18:20:24,983 - INFO - Trailing stop updated for BUY position 1691996546: SL 4742.32
+2026-04-09 18:20:25,613 - INFO - Trailing stop updated for BUY position 1692008358: SL 4742.32
+2026-04-09 18:21:25,614 - INFO - Position opened: 1692012123 - XAUUSD BUY 29.61 lots at 4745.58
+2026-04-09 18:21:25,614 - INFO - TRADE CLOSED: 1691996546 | XAUUSD BUY | Duration: 0:07:01.887525 | P/L: $0.00
+2026-04-09 18:21:25,618 - INFO - Position size calculated: 34.02 lots (risk: $1020.63, SL: 30 pips)
+2026-04-09 18:21:25,619 - ERROR - Order failed: No money
+2026-04-09 18:21:25,619 - ERROR - Failed to execute signal
