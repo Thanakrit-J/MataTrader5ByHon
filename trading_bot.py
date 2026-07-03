@@ -1,123 +1,59 @@
 import MetaTrader5 as mt5
 import pandas as pd
 import numpy as np
-import ta, time, pytz
+import time, pytz
 import psycopg2
 from datetime import datetime, timedelta, timezone
-from collections import deque
-from typing import Optional
+from typing import Optional, Dict, Any, Tuple
 
-# ===== CONFIG =====
-SYMBOL, TIMEFRAME = "XAUUSD", mt5.TIMEFRAME_M15
+# ==========================================
+# ⚙️ GLOBAL CONFIGURATION
+# ==========================================
+SYMBOL, TIMEFRAME = "XAUUSD", mt5.TIMEFRAME_M5
 LOCAL_TIMEZONE = pytz.timezone("Asia/Bangkok")
 
-# ปรับค่าสอดคล้องกับพอร์ตทองคำ ทุน $30
-RISK_PER_TRADE         = 0.03
-TRAILING_STOP_POINTS   = 350
-TAKE_PROFIT_MULTIPLIER = 2.0
+RISK_PER_TRADE         = 0.01        # ลดจาก 0.03 เหลือ 1%
+MIN_VOLUME             = 50          # ต้องมี Volume >= 50 ก่อนเข้าเทรด (ลดจาก 100)
+TRAILING_STOP_POINTS   = 120     
+TAKE_PROFIT_MULTIPLIER = 3.0         # เพิ่มจาก 2.5 → 1:3 Risk/Reward     
 SL_ATR_MULTIPLIER      = 1.5
 
 ORDER_PROFIT_MIN    = 0.5
 ORDER_PROFIT_MAX    = 2.0
-DAILY_PROFIT_TARGET = 3.0
-DAILY_LOSS_LIMIT    = -3.0
+DAILY_PROFIT_TARGET = 100.0
+DAILY_LOSS_LIMIT    = -100.0
 
-FAST_EMA, SLOW_EMA, RSI_PERIOD, ATR_PERIOD = 10, 20, 14, 14
-SCORE_THRESHOLD, MAX_SPREAD_POINTS, MAGIC = 3, 40, 20250101
-TRADING_HOUR_START, TRADING_HOUR_END, RECONNECT_WAIT, MAX_RECONNECT = 7, 16, 5, 10
-MIN_FREE_MARGIN_BUFFER, ANALYSIS_HISTORY_DAYS, DASHBOARD_EVERY_N_LOOPS = 1.3, 30, 10
+MAX_SPREAD_POINTS, MAGIC = 45, 20260702
+TRADING_HOUR_START, TRADING_HOUR_END = 7, 20  # เวลา UTC: 07.00 - 20.00 (เทรดถึงตี 3 เวลาไทย)
+RECONNECT_WAIT, MAX_RECONNECT = 5, 10
+MIN_FREE_MARGIN_BUFFER = 1.3
+ANALYSIS_HISTORY_DAYS  = 30
+DASHBOARD_EVERY_N_LOOPS = 20  
 
-# การเชื่อมต่อฐานข้อมูล PostgreSQL บน Docker
 DB_CONFIG = {
     "host": "localhost",
     "database": "mt5_trading",
     "user": "bot_user",
     "password": "BotPassword123",
-    "port": "5432"
+    "port": "5433"  # <--- เปลี่ยนเป็นเลข 5433 ให้ตรงกับ Docker
 }
 
-class TradeAnalyzer:
-    def __init__(self, magic: int, symbol: str, days_back: int = 30):
-        self.magic, self.symbol, self.days_back = magic, symbol, days_back
+# ==========================================
+# 💾 1. DATABASE MANAGEMENT MODULE
+# ==========================================
+class DatabaseManager:
+    def __init__(self, config: Dict[str, str]):
+        self.config = config
+        self.db_ready = True
+        self.last_error = None
+        self.initialize_tables()
 
-    def fetch_closed_deals(self) -> pd.DataFrame:
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
-        deals = mt5.history_deals_get(now - timedelta(days=self.days_back), now)
-        if not deals: return pd.DataFrame()
-        df = pd.DataFrame(list(deals), columns=deals[0]._asdict().keys())
-        df['time'] = pd.to_datetime(df['time'], unit='s', utc=True)
-        df = df[(df['entry'] == mt5.DEAL_ENTRY_OUT) & (df['magic'] == self.magic) & (df['symbol'] == self.symbol)].copy()
-        if df.empty: return df
-        df['direction'] = df['type'].map({mt5.DEAL_TYPE_BUY: 'BUY', mt5.DEAL_TYPE_SELL: 'SELL'}).fillna('OTHER')
-        df['win'], df['hour_ict'] = df['profit'] > 0, (df['time'].dt.hour + 7) % 24
-        return df.reset_index(drop=True)
+    def _get_connection(self):
+        return psycopg2.connect(**self.config)
 
-    def compute_stats(self, df: pd.DataFrame) -> dict:
-        if df.empty: return {}
-        total, wins = len(df), int(df['win'].sum())
-        losses, avg_win, avg_loss = total - wins, df[df['win']]['profit'].mean() or 0, df[~df['win']]['profit'].mean() or 0
-        g_win, g_loss = df[df['win']]['profit'].sum(), df[~df['win']]['profit'].sum()
-        h_stats = df.groupby('hour_ict').agg(trades=('profit', 'count'), profit=('profit', 'sum'), win_rate=('win', 'mean')).sort_values('profit', ascending=False)
-        return {
-            'total': total, 'wins': wins, 'losses': losses, 'win_rate': wins / total * 100,
-            'avg_win': avg_win, 'avg_loss': avg_loss, 'profit_factor': abs(g_win / g_loss) if g_loss != 0 else float('inf'),
-            'actual_rr': abs(avg_win / avg_loss) if avg_loss != 0 else float('inf'), 'net_profit': df['profit'].sum(),
-            'best_hours': h_stats[h_stats['profit'] > 0].index.tolist()[:3], 'worst_hours': h_stats[h_stats['profit'] < 0].index.tolist(),
-            'hour_stats': h_stats, 'dir_stats': {d: {'count': len(df[df['direction'] == d]), 'win_rate': df[df['direction'] == d]['win'].mean() * 100 if len(df[df['direction'] == d]) > 0 else 0, 'net': df[df['direction'] == d]['profit'].sum()} for d in ['BUY', 'SELL']}
-        }
-
-    def print_report(self, label: str = ""):
-        stats = self.compute_stats(self.fetch_closed_deals())
-        sep = "═" * 56
-        print(f"\n{sep}\n  📊 ANALYSIS REPORT {label}\n{sep}")
-        if not stats: print("  ยังไม่มีประวัติเทรดเพียงพอในช่วง 30 วัน")
-        else:
-            print(f"  เทรดทั้งหมด: {stats['total']} | Net: ${stats['net_profit']:+.2f} | WR: {stats['win_rate']:.1f}% | PF: {stats['profit_factor']:.2f}")
-            print(f"  RR จริง: 1:{stats['actual_rr']:.2f} | AvgWin: ${stats['avg_win']:+.2f} | AvgLoss: ${stats['avg_loss']:+.2f}")
-            for d, s in stats['dir_stats'].items(): print(f"  {d}: {s['count']} เทรด | WR {s['win_rate']:.0f}% | Net ${s['net']:+.2f}")
-            print(f"  ⭐ ทอง (ICT): {stats['best_hours']} | ⚠️ เลี่ยง (ICT): {stats['worst_hours'][:3]}")
-        print(sep)
-
-    def get_next_trade_advice(self) -> str:
-        stats = self.compute_stats(self.fetch_closed_deals())
-        if not stats or stats['total'] < 5: return "  📋 ข้อมูลยังน้อย — เทรดตาม config ปกติ"
-        h_ict = (datetime.now(timezone.utc).hour + 7) % 24
-        lines = []
-        if h_ict in stats['hour_stats'].index:
-            if stats['hour_stats'].loc[h_ict, 'profit'] < 0: lines.append(f"  ⚠️ ชั่วโมงนี้ ({h_ict}:xx ICT) มักขาดทุน")
-            elif stats['hour_stats'].loc[h_ict, 'win_rate'] >= 0.6: lines.append(f"  ⭐ ชั่วโมงนี้ ({h_ict}:xx ICT) ประวัติดี")
-        if stats['actual_rr'] < TAKE_PROFIT_MULTIPLIER * 0.8: lines.append("  💡 RR ต่ำ — รอสัญญาณชัดกว่านี้")
-        return "\n".join(lines) if lines else "  ✅ ประวัติดี — เทรดตาม config ได้เลย"
-
-class AIBot:
-    def __init__(self):
-        self._connect()
-        self._check_account_type()
-        self._init_db()
-        self.analyzer = TradeAnalyzer(MAGIC, SYMBOL, ANALYSIS_HISTORY_DAYS)
-        self.daily_trades, self.today, self.processed_deals, self.trade_history = 0, self._utc_now().date(), set(), []
-        self.recent_losses, self.daily_profit_total, self.daily_loss_total = deque(maxlen=10), 0.0, 0.0
-        self.daily_profit_halt, self.daily_loss_halt, self.last_candle_time, self._loop_count = False, False, None, 0
-        self.current_context = {}
-
-    def _connect(self):
-        global MAX_RECONNECT, RECONNECT_WAIT
-        for i in range(1, MAX_RECONNECT + 1):
-            if mt5.initialize(): return print("✅ MT5 connected")
-            print(f"⚠️ MT5 init failed ({i}/{MAX_RECONNECT})"); time.sleep(RECONNECT_WAIT)
-        raise RuntimeError("❌ Cannot connect to MT5")
-
-    def _check_account_type(self):
-        acc = mt5.account_info()
-        if not acc: raise RuntimeError("❌ ไม่สามารถดึงข้อมูลบัญชีได้")
-        if acc.trade_mode != mt5.ACCOUNT_TRADE_MODE_DEMO:
-            print("\n" + "═"*60 + "\n🛑 LIVE ACCOUNT DETECTED! บอทนี้ทำงานบนบัญชี DEMO เท่านั้นเพื่อความปลอดภัย\n" + "═"*60 + "\n")
-            mt5.shutdown(); exit()
-        print(f"🔒 Demo Verified (พอร์ต: {acc.login} | Server: {acc.server})")
-
-    def _init_db(self):
+    def initialize_tables(self) -> None:
         try:
-            with psycopg2.connect(**DB_CONFIG) as conn:
+            with self._get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute("""
                         CREATE TABLE IF NOT EXISTS closed_trades (
@@ -131,217 +67,615 @@ class AIBot:
                             htf_trend VARCHAR(15),
                             closed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                         );
+                        CREATE TABLE IF NOT EXISTS candles (
+                            symbol VARCHAR(20) NOT NULL,
+                            timeframe INT NOT NULL,
+                            candle_time TIMESTAMP WITH TIME ZONE NOT NULL,
+                            open_price NUMERIC(12, 5) NOT NULL,
+                            high_price NUMERIC(12, 5) NOT NULL,
+                            low_price NUMERIC(12, 5) NOT NULL,
+                            close_price NUMERIC(12, 5) NOT NULL,
+                            volume NUMERIC(12, 2),
+                            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                            PRIMARY KEY (symbol, timeframe, candle_time)
+                        );
                         CREATE INDEX IF NOT EXISTS idx_closed_trades_time ON closed_trades (closed_at DESC);
+                        CREATE INDEX IF NOT EXISTS idx_candles_time ON candles (symbol, timeframe, candle_time DESC);
                     """)
                     conn.commit()
-            print("💾 Database Brain-Table ready")
+            print("💾 [Database] Storage setup and verified.")
         except Exception as e:
-            print(f"⚠️ Database init failed: {e}")
+            self.db_ready = False
+            self.last_error = str(e)
+            print(f"⚠️ [Database] Init failure: {e}")
 
-    def _save_trade_to_db(self, ticket: int, symbol: str, direction: str, profit: float):
+    def save_trade(self, ticket: int, symbol: str, direction: str, profit: float, context: Dict[str, Any]) -> None:
         try:
-            ctx = self.current_context.get(ticket, {"rsi": None, "atr": None, "score": None, "htf": "unknown"})
-            with psycopg2.connect(**DB_CONFIG) as conn:
+            with self._get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute("""
                         INSERT INTO closed_trades (ticket, symbol, direction, profit, rsi_entry, atr_entry, score_entry, htf_trend, closed_at)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (ticket) DO NOTHING;
-                    """, (ticket, symbol, direction, profit, ctx["rsi"], ctx["atr"], ctx["score"], ctx["htf"], datetime.now(timezone.utc)))
+                    """, (ticket, symbol, direction, profit, context.get("rsi", 50.0), context.get("atr", 0.0), context.get("score", 5), context.get("htf", "PA_Trade"), datetime.now(timezone.utc)))
                     conn.commit()
-            if ticket in self.current_context: del self.current_context[ticket]
-            print(f"💾 Saved Ticket {ticket} with Market Context to DB successfully")
+            print(f"💾 [Database] Successfully logged Ticket {ticket} data.")
         except Exception as e:
-            print(f"⚠️ Failed to save trade to DB: {e}")
+            self.db_ready = False
+            self.last_error = str(e)
+            print(f"⚠️ [Database] Failed to save log for Ticket {ticket}: {e}")
 
-    # 🧠 ฟังก์ชันใหม่: ดึงสถิติจากฐานข้อมูลมาคำนวณและปรับตัวกรองความปลอดภัยในการเทรดต่อ
-    def _get_db_logic_filter(self, current_rsi: float, direction: str) -> bool:
+    def save_candle(self, symbol: str, timeframe: int, candle: Dict[str, Any]) -> None:
         try:
-            with psycopg2.connect(**DB_CONFIG) as conn:
+            with self._get_connection() as conn:
                 with conn.cursor() as cur:
-                    # 1. เช็กประวัติการเข้าช่วงค่า RSI ใกล้เคียงกัน (+- 5) ว่าในอดีตถ้าเข้าทิศทางนี้แล้วพังบ่อยไหม
                     cur.execute("""
-                        SELECT COUNT(*), SUM(CASE WHEN profit > 0 THEN 1 ELSE 0 END)
-                        FROM closed_trades 
-                        WHERE direction = %s AND rsi_entry BETWEEN %s AND %s;
-                    """, (direction, current_rsi - 5, current_rsi + 5))
-                    res = cur.fetchone()
-                    
-                    if res and res[0] >= 3: # ถ้ามีประวัติเทรดในโซนนี้อย่างน้อย 3 ครั้ง
-                        win_rate = (res[1] / res[0]) * 100
-                        if win_rate < 40.0:
-                            print(f"   🧠 DB Filter Active: โซน RSI นี้ ({current_rsi:.1f}) ฝั่ง {direction} มี Win Rate ต่ำมากในอดีต ({win_rate:.1f}%) -> 🛑 สั่งระงับไม้")
-                            return False
-                    
-                    # 2. เช็กผลรวมกำไรสะสมภาพรวมใน Database เพื่อปรับความเข้มงวดของ Score (Dynamic Threshold)
-                    cur.execute("SELECT SUM(profit) FROM closed_trades;")
-                    net_profit = cur.fetchone()[0] or 0.0
-                    if net_profit < 0:
-                        global SCORE_THRESHOLD
-                        SCORE_THRESHOLD = 4 # ถ้ารวมแล้วระบบพอร์ตติดลบ ให้เพิ่มเกณฑ์ความแม่นยำจาก 3 แต้มเป็น 4 แต้ม
-                        print(f"   🧠 DB Filter Active: ภาพรวมระบบติดลบ (${net_profit:.2f}) -> ยกระดับความปลอดภัย SCORE_THRESHOLD = 4")
-                    else:
-                        SCORE_THRESHOLD = 3 # ถ้ากลับมากำไร ให้ใช้เกณฑ์มาตรฐานเดิม
-                        
-            return True
+                        INSERT INTO candles (symbol, timeframe, candle_time, open_price, high_price, low_price, close_price, volume)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (symbol, timeframe, candle_time) DO NOTHING;
+                    """, (
+                        symbol,
+                        timeframe,
+                        candle["time"],
+                        candle.get("open", 0.0),
+                        candle.get("high", 0.0),
+                        candle.get("low", 0.0),
+                        candle.get("close", 0.0),
+                        candle.get("tick_volume", 0.0),
+                    ))
+                    conn.commit()
         except Exception as e:
-            print(f"   ⚠️ DB Filter Error: {e} (ข้ามไปใช้ระบบปกติ)")
-            return True
+            self.db_ready = False
+            self.last_error = str(e)
+            print(f"⚠️ [Database] Failed to save candle for {symbol}: {e}")
 
-    def _ensure_connected(self): return self._connect() if mt5.terminal_info() is None else True
-    def _utc_now(self): return datetime.now(tz=pytz.utc)
-    def _is_trading_hours(self): return TRADING_HOUR_START <= self._utc_now().hour < TRADING_HOUR_END
+    def load_recent_candles(self, symbol: str, timeframe: int, limit: int = 60) -> pd.DataFrame:
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT candle_time, open_price, high_price, low_price, close_price, volume
+                        FROM candles
+                        WHERE symbol = %s AND timeframe = %s
+                        ORDER BY candle_time ASC
+                        LIMIT %s;
+                    """, (symbol, timeframe, limit))
+                    rows = cur.fetchall()
+            if not rows:
+                return pd.DataFrame(columns=["time", "open", "high", "low", "close", "volume"])
+            df = pd.DataFrame(rows, columns=["time", "open", "high", "low", "close", "volume"])
+            df["time"] = pd.to_datetime(df["time"], utc=True)
+            return df
+        except Exception as e:
+            self.db_ready = False
+            self.last_error = str(e)
+            print(f"⚠️ [Database] Failed to load candles for {symbol}: {e}")
+            return pd.DataFrame(columns=["time", "open", "high", "low", "close", "volume"])
 
-    def get_data(self, timeframe, bars: int = 100) -> pd.DataFrame:
-        self._ensure_connected()
-        rates = mt5.copy_rates_from_pos(SYMBOL, timeframe, 0, bars)
-        if rates is None or len(rates) == 0: raise ValueError(f"No data for {SYMBOL}")
+
+# ==========================================
+# 📈 2. MARKET & PRICE ACTION ANALYZER MODULE
+# ==========================================
+class MarketAnalyzer:
+    def __init__(self, symbol: str, timeframe: int, max_spread: int):
+        self.symbol = symbol
+        self.timeframe = timeframe
+        self.max_spread = max_spread
+
+    def fetch_market_data(self, bars_count: int = 60) -> pd.DataFrame:
+        rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, bars_count)
+        if rates is None or len(rates) == 0:
+            raise ValueError(f"❌ [Analyzer] Failed to copy market data for {self.symbol}")
         df = pd.DataFrame(rates)
         df['time'] = pd.to_datetime(df['time'], unit='s', utc=True)
+        df['atr'] = df['high'] - df['low']
         return df
 
-    def add_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
-        df = df.copy()
-        df['ema_fast'], df['ema_slow'] = ta.trend.ema_indicator(df['close'], FAST_EMA), ta.trend.ema_indicator(df['close'], SLOW_EMA)
-        df['rsi'] = ta.momentum.rsi(df['close'], RSI_PERIOD)
-        df['atr'] = ta.volatility.average_true_range(df['high'], df['low'], df['close'], ATR_PERIOD)
-        return df
+    def _ema(self, series: pd.Series, period: int) -> pd.Series:
+        return series.ewm(span=period, adjust=False).mean()
 
-    def higher_trend(self) -> str:
-        df = self.add_indicators(self.get_data(mt5.TIMEFRAME_H1))
-        f, s = df['ema_fast'].iloc[-1], df['ema_slow'].iloc[-1]
-        return 'neutral' if abs(f - s) / s < 0.0001 else ('up' if f > s else 'down')
+    def _rsi(self, series: pd.Series, period: int = 14) -> pd.Series:
+        delta = series.diff()
+        gain = delta.clip(lower=0).rolling(window=period).mean()
+        loss = (-delta.clip(upper=0)).rolling(window=period).mean()
+        rs = gain / loss.replace(0, np.nan)
+        rsi = 100 - (100 / (1 + rs))
+        return rsi.fillna(50)
 
-    def calculate_score(self, df: pd.DataFrame) -> int:
-        p, f, s, r, r_prev = df['close'].iloc[-1], df['ema_fast'].iloc[-1], df['ema_slow'].iloc[-1], df['rsi'].iloc[-1], df['rsi'].iloc[-5]
-        rng = df['high'].tail(20).max() - df['low'].tail(20).min()
-        pos = (p - df['low'].tail(20).min()) / rng if rng > 0 else 0.5
-        return (2 if f > s else -2) + (1 if r > 55 else (-1 if r < 45 else 0)) + (1 if r > r_prev else -1) + (1 if pos > 0.7 else (-1 if pos < 0.3 else 0)) + (1 if abs(f - s) / p > 0.0003 else -1)
+    def analyze_candle_signal(self, df: pd.DataFrame) -> Tuple[Optional[str], str]:
+        if len(df) < 20:
+            return None, "not enough candles"
 
-    def open_positions(self): self._ensure_connected(); pos = mt5.positions_get(symbol=SYMBOL); return [p for p in pos if p.magic == MAGIC] if pos else []
-    def has_open_position(self): return len(self.open_positions()) > 0
+        # 🔊 ตรวจสอบ Volume ก่อน (ต้องมี Volume >= MIN_VOLUME)
+        last_volume = float(df['tick_volume'].iloc[-1]) if 'tick_volume' in df.columns else 0
+        if last_volume < MIN_VOLUME:
+            return None, f"volume too low ({last_volume} < {MIN_VOLUME})"
 
-    def update_trailing_stops(self):
-        for p in self.open_positions():
-            tick, pt = mt5.symbol_info_tick(SYMBOL), mt5.symbol_info(SYMBOL).point
-            trail = TRAILING_STOP_POINTS * pt
-            new_sl = tick.bid - trail if p.type == mt5.ORDER_TYPE_BUY else tick.ask + trail
-            if p.sl == 0 or (p.type == mt5.ORDER_TYPE_BUY and new_sl > p.sl + pt) or (p.type == mt5.ORDER_TYPE_SELL and new_sl < p.sl - pt):
-                mt5.order_send({"action": mt5.TRADE_ACTION_SLTP, "position": p.ticket, "sl": new_sl})
+        closes = pd.to_numeric(df['close'], errors='coerce').astype(float)
+        ema_fast = self._ema(closes, 9)
+        ema_slow = self._ema(closes, 21)
+        rsi = self._rsi(closes, 14)
 
-    def track_closed_trades(self):
-        self._ensure_connected()
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
-        deals = mt5.history_deals_get(now - timedelta(hours=2), now) or []
-        new_closed = 0
-        for d in deals:
-            if d.entry != mt5.DEAL_ENTRY_OUT or d.ticket in self.processed_deals or d.magic != MAGIC: continue
-            self.processed_deals.add(d.ticket)
-            new_closed += 1
-            
-            direction = "BUY" if d.type == mt5.ORDER_TYPE_BUY else "SELL"
-            self._save_trade_to_db(d.ticket, SYMBOL, direction, d.profit)
-            
-            if d.profit >= 0:
-                self.daily_profit_total += d.profit
-                if self.daily_profit_total >= DAILY_PROFIT_TARGET: self.daily_profit_halt = True
-            else:
-                self.daily_loss_total += d.profit
-                self.recent_losses.append({"type": direction})
-                if self.daily_loss_total <= DAILY_LOSS_LIMIT: self.daily_loss_halt = True
-        if new_closed > 0:
-            self.analyzer.print_report(f"(หลังปิด {new_closed} trade)")
-            print(f"  💬 แนะนำสำหรับ trade ถัดไป:\n{self.analyzer.get_next_trade_advice()}\n")
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
+        prev2 = df.iloc[-3]
 
-    def lot_size(self, sl_points: float, signal: str, price: float) -> float:
-        acc, sinfo = mt5.account_info(), mt5.symbol_info(SYMBOL)
-        lot = (acc.balance * RISK_PER_TRADE) / (sl_points or 1.0)
+        last_close = float(last['close'])
+        last_open = float(last['open'])
+        prev_high = float(prev['high'])
+        prev_low = float(prev['low'])
+        prev2_high = float(prev2['high'])
+        prev2_low = float(prev2['low'])
+        last_body = abs(last_close - last_open)
+        prev_body = abs(float(prev['close']) - float(prev['open']))
+        prev2_body = abs(float(prev2['close']) - float(prev2['open']))
+
+        ema_fast_val = float(ema_fast.iloc[-1])
+        ema_slow_val = float(ema_slow.iloc[-1])
+        rsi_val = float(rsi.iloc[-1])
+
+        if last_body <= 0:
+            return None, "latest candle body is too small"
+
+        bullish_break = last_close > last_open and last_close > prev_high and last_close > prev2_high
+        bearish_break = last_close < last_open and last_close < prev_low and last_close < prev2_low
+
+        if bullish_break and last_body >= max(prev_body, prev2_body) * 0.8 and last_close > ema_fast_val and ema_fast_val > ema_slow_val and rsi_val > 50:
+            return 'BUY', f"bullish breakout, close={last_close:.2f}, EMA9/21={ema_fast_val:.2f}/{ema_slow_val:.2f}, RSI={rsi_val:.1f}"
+
+        if bearish_break and last_body >= max(prev_body, prev2_body) * 0.8 and last_close < ema_fast_val and ema_fast_val < ema_slow_val and rsi_val < 50:
+            return 'SELL', f"bearish breakout, close={last_close:.2f}, EMA9/21={ema_fast_val:.2f}/{ema_slow_val:.2f}, RSI={rsi_val:.1f}"
+
+        return None, f"no valid signal, close={last_close:.2f}, EMA9/21={ema_fast_val:.2f}/{ema_slow_val:.2f}, RSI={rsi_val:.1f}"
+
+    def is_spread_valid(self) -> bool:
+        tick = mt5.symbol_info_tick(self.symbol)
+        sinfo = mt5.symbol_info(self.symbol)
+        if not tick or not sinfo:
+            return False
+        current_spread = (tick.ask - tick.bid) / sinfo.point
+        return current_spread <= self.max_spread
+
+    def analyze_zones_and_signals(self, df: pd.DataFrame) -> Optional[str]:
+        if len(df) < 40:
+            return None
+
+        # คำนวณหาแนวรับ-แนวต้าน (Demand / Supply Zones) ย้อนหลัง 30 แท่ง
+        past_df = df.iloc[:-1]
+        demand_zone = float(past_df['low'].tail(30).min())
+        supply_zone = float(past_df['high'].tail(30).max())
+
+        # ดึงราคาแท่งปัจจุบัน และแท่งที่พึ่งจบไป
+        c_open, c_close = df['open'].iloc[-1], df['close'].iloc[-1]
+        c_high, c_low = df['high'].iloc[-1], df['low'].iloc[-1]
+        p_open, p_close = df['open'].iloc[-2], df['close'].iloc[-2]
+        p_high, p_low = df['high'].iloc[-2], df['low'].iloc[-2]
+
+        buffer = 1.5
+
+        # 🟢 Check Bullish Engulfing inside Demand Zone
+        if c_low <= demand_zone + buffer:
+            if c_close > c_open and p_close < p_open and c_close > p_open and c_open < p_close:
+                print(f"🔥 [Signal] Demand Zone Tested ({demand_zone}) + Bullish Engulfing! -> BUY")
+                return 'BUY'
+
+        # 🟢 Fallback: simple bullish reversal near demand zone
+        if c_low <= demand_zone + buffer:
+            if c_close > c_open and c_close > p_close and c_low < p_low:
+                print(f"🔥 [Signal] Fallback bullish near demand zone -> BUY")
+                return 'BUY'
+
+        # 🔴 Check Bearish Engulfing inside Supply Zone
+        if c_high >= supply_zone - buffer:
+            if c_close < c_open and p_close > p_open and c_close < p_open and c_open > p_close:
+                print(f"🔥 [Signal] Supply Zone Tested ({supply_zone}) + Bearish Engulfing! -> SELL")
+                return 'SELL'
+
+        # 🔴 Fallback: simple bearish reversal near supply zone
+        if c_high >= supply_zone - buffer:
+            if c_close < c_open and c_close < p_close and c_high > p_high:
+                print(f"🔥 [Signal] Fallback bearish near supply zone -> SELL")
+                return 'SELL'
+
+        return None
+
+
+# ==========================================
+# 🏹 3. TRADE EXECUTION & RISK MANAGEMENT
+# ==========================================
+class TradeExecutionManager:
+    def __init__(self, symbol: str, magic: int, risk_percent: float):
+        self.symbol = symbol
+        self.magic = magic
+        self.risk_percent = risk_percent
+
+    def get_active_positions(self) -> list:
+        positions = mt5.positions_get(symbol=self.symbol)
+        if not positions:
+            return []
+        return [p for p in positions if p.magic == self.magic]
+
+    def has_open_position(self) -> bool:
+        return len(self.get_active_positions()) > 0
+
+    def calculate_lot_size(self, sl_points: float, entry_price: float) -> float:
+        acc = mt5.account_info()
+        sinfo = mt5.symbol_info(self.symbol)
+        if not acc or not sinfo:
+            return 0.01
+
+        risk_amount = acc.balance * self.risk_percent
+        lot = risk_amount / (sl_points if sl_points > 0 else 1.0)
         lot = round(round(max(sinfo.volume_min, min(lot, sinfo.volume_max)) / sinfo.volume_step) * sinfo.volume_step, 2)
-        otype = mt5.ORDER_TYPE_BUY if signal == 'BUY' else mt5.ORDER_TYPE_SELL
-        while lot >= sinfo.volume_min:
-            margin = mt5.order_calc_margin(otype, SYMBOL, lot, price)
-            if margin and margin * MIN_FREE_MARGIN_BUFFER <= acc.margin_free: break
+        
+        # ตรวจสอบหลักประกัน (Margin Allocation Buffer)
+        otype = mt5.ORDER_TYPE_BUY
+        margin = mt5.order_calc_margin(otype, self.symbol, lot, entry_price)
+        while margin and margin * MIN_FREE_MARGIN_BUFFER > acc.margin_free and lot >= sinfo.volume_min:
             lot = round(lot - sinfo.volume_step, 2)
+            margin = mt5.order_calc_margin(otype, self.symbol, lot, entry_price)
+
         return max(sinfo.volume_min, lot)
 
-    def close_all_positions(self, reason: str):
-        for p in self.open_positions():
-            cp = mt5.symbol_info_tick(SYMBOL).bid if p.type == mt5.ORDER_TYPE_BUY else mt5.symbol_info_tick(SYMBOL).ask
-            mt5.order_send({"action": mt5.TRADE_ACTION_DEAL, "symbol": SYMBOL, "volume": p.volume, "type": mt5.ORDER_TYPE_SELL if p.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY, "position": p.ticket, "price": cp, "deviation": 10, "magic": MAGIC, "comment": reason})
+    def execute_market_order(self, direction: str, candle_height: float, rsi_value: float = 50.0, atr_value: float = 0.0) -> Tuple[Optional[int], Optional[float], Optional[float], Optional[float]]:
+        sinfo = mt5.symbol_info(self.symbol)
+        tick = mt5.symbol_info_tick(self.symbol)
+        if not sinfo or not tick:
+            return None, None, None, None
 
-    def check_profit_target(self):
-        fl = mt5.account_info().equity - mt5.account_info().balance
-        if fl >= ORDER_PROFIT_MAX: self.close_all_positions("ORDER_MAX_PROFIT")
-        elif fl >= ORDER_PROFIT_MIN: self.close_all_positions("ORDER_MIN_PROFIT")
+        is_buy = direction == 'BUY'
+        price = tick.ask if is_buy else tick.bid
+        # 🧮 SL สมดุล: 1.3x candle height หรือ 0.8x ATR → Risk/Reward 1:3
+        sl_dist = max(candle_height * 1.3, atr_value * 0.8 if atr_value > 0 else 2.0)
+        
+        sl_price = price - sl_dist if is_buy else price + sl_dist
+        tp_price = price + (sl_dist * TAKE_PROFIT_MULTIPLIER) if is_buy else price - (sl_dist * TAKE_PROFIT_MULTIPLIER)
+        
+        sl_points = sl_dist / sinfo.point
+        lot = self.calculate_lot_size(sl_points, price)
 
-    def analyze(self, df: pd.DataFrame) -> Optional[str]:
-        if len(df) < 50 or not self._is_trading_hours(): return None
-        tick, sinfo = mt5.symbol_info_tick(SYMBOL), mt5.symbol_info(SYMBOL)
-        if (tick.ask - tick.bid) / sinfo.point > MAX_SPREAD_POINTS or df['atr'].iloc[-1] < df['atr'].rolling(20).mean().iloc[-1] * 0.8: return None
-        
-        rsi_now = float(df['rsi'].iloc[-1])
-        score, ht = self.calculate_score(df), self.higher_trend()
-        
-        # เรียกใช้ตัวกรองสถิติจาก Database เพื่อปรับเงื่อนไข Score Threshold ล่าสุด
-        # บอทจะเช็กว่าภาพรวมติดลบไหม ถ้าติดลบจะบังคับปรับให้เงื่อนไขผ่านยากขึ้นชั่วคราว
-        self._get_db_logic_filter(rsi_now, 'BUY' if score > 0 else 'SELL') 
-        
-        decision = 'BUY' if score >= SCORE_THRESHOLD else ('SELL' if score <= -SCORE_THRESHOLD else None)
-        if not decision or (decision == 'BUY' and ht == 'down') or (decision == 'SELL' and ht == 'up'): return None
-        if sum(1 for r in list(self.recent_losses)[-5:] if r["type"] == decision) >= 3: return None
-        
-        # 🧠 ยิง SQL ไปตรวจสอบประวัติในโซน RSI ปัจจุบันว่าอดีตเคยพังไหม ถ้าเคยพังบ่อยให้สละสิทธิ์การเข้าเทรดรอบนี้
-        if not self._get_db_logic_filter(rsi_now, decision): return None
-        
-        self.temp_market_context = {
-            "rsi": rsi_now,
-            "atr": float(df['atr'].iloc[-1]),
-            "score": int(score),
-            "htf": str(ht)
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": self.symbol,
+            "volume": lot,
+            "type": mt5.ORDER_TYPE_BUY if is_buy else mt5.ORDER_TYPE_SELL,
+            "price": price,
+            "sl": round(sl_price, sinfo.digits),
+            "tp": round(tp_price, sinfo.digits),
+            "deviation": 10,
+            "magic": self.magic,
+            "comment": "PA_OOP_V2"
         }
-        return decision
 
-    def place_trade(self, signal: str, df: pd.DataFrame):
-        sinfo, tick = mt5.symbol_info(SYMBOL), mt5.symbol_info_tick(SYMBOL)
-        price = tick.ask if signal == 'BUY' else tick.bid
-        sl_dist = df['atr'].iloc[-1] * SL_ATR_MULTIPLIER
-        sl_price = price - sl_dist if signal == 'BUY' else price + sl_dist
-        tp_price = price + (sl_dist * TAKE_PROFIT_MULTIPLIER) if signal == 'BUY' else price - (sl_dist * TAKE_PROFIT_MULTIPLIER)
-        lot = self.lot_size(sl_dist / sinfo.point, signal, price)
-        margin = mt5.order_calc_margin(mt5.ORDER_TYPE_BUY if signal == 'BUY' else mt5.ORDER_TYPE_SELL, SYMBOL, lot, price)
-        if not margin or margin * MIN_FREE_MARGIN_BUFFER > mt5.account_info().margin_free: return
-        
-        r = mt5.order_send({"action": mt5.TRADE_ACTION_DEAL, "symbol": SYMBOL, "volume": lot, "type": mt5.ORDER_TYPE_BUY if signal == 'BUY' else mt5.ORDER_TYPE_SELL, "price": price, "sl": round(sl_price, sinfo.digits), "tp": round(tp_price, sinfo.digits), "deviation": 10, "magic": MAGIC, "comment": "AI_BOT_V2"})
-        
-        if r.retcode == mt5.TRADE_RETCODE_DONE: 
-            self.daily_trades += 1
-            if hasattr(self, 'temp_market_context'):
-                self.current_context[r.order] = self.temp_market_context
+        result = mt5.order_send(request)
+        if result and result.retcode == mt5.TRADE_RETCODE_DONE:
+            print(f"✅ [Execution] Order filled successfully! Ticket: {result.order} ({direction} - Lot: {lot}) RSI={rsi_value:.1f} ATR={atr_value:.5f}")
+            return result.order, price, rsi_value, atr_value
+        else:
+            print(f"❌ [Execution] Order rejected. Code: {result.retcode if result else 'Unknown'}")
+            return None, None, None, None
 
-    def run(self):
-        self.analyzer.print_report("(เริ่มต้น bot)")
+    def manage_trailing_stop(self) -> None:
+        positions = self.get_active_positions()
+        sinfo = mt5.symbol_info(self.symbol)
+        tick = mt5.symbol_info_tick(self.symbol)
+        if not sinfo or not tick or not positions:
+            return
+
+        pt = sinfo.point
+        trail_distance = TRAILING_STOP_POINTS * pt
+
+        for p in positions:
+            if p.type == mt5.ORDER_TYPE_BUY:
+                new_sl = tick.bid - trail_distance
+                if p.sl == 0 or new_sl > p.sl + pt:
+                    mt5.order_send({"action": mt5.TRADE_ACTION_SLTP, "position": p.ticket, "sl": round(new_sl, sinfo.digits), "tp": p.tp})
+            elif p.type == mt5.ORDER_TYPE_SELL:
+                new_sl = tick.ask + trail_distance
+                if p.sl == 0 or new_sl < p.sl - pt:
+                    mt5.order_send({"action": mt5.TRADE_ACTION_SLTP, "position": p.ticket, "sl": round(new_sl, sinfo.digits), "tp": p.tp})
+
+    def close_all_orders(self, reason: str) -> None:
+        positions = self.get_active_positions()
+        if not positions:
+            print(f"🧹 [Execution] No positions to close for reason: {reason}")
+            return
+
+        for p in positions:
+            tick = mt5.symbol_info_tick(self.symbol)
+            price = tick.bid if p.type == mt5.ORDER_TYPE_BUY else tick.ask
+            inverse_type = mt5.ORDER_TYPE_SELL if p.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
+            result = mt5.order_send({
+                "action": mt5.TRADE_ACTION_DEAL,
+                "symbol": self.symbol,
+                "volume": p.volume,
+                "type": inverse_type,
+                "position": p.ticket,
+                "price": price,
+                "deviation": 10,
+                "magic": self.magic,
+                "comment": reason
+            })
+            print(f"🔒 [Execution] Closing position {p.ticket} for reason: {reason} -> {'ok' if result and result.retcode == mt5.TRADE_RETCODE_DONE else result.retcode if result else 'unknown'}")
+        print(f"🎒 [Execution] Exit cycle complete: {reason}")
+
+
+# ==========================================
+# 🤖 4. MAIN CONTROLLER CORE ENGINE
+# ==========================================
+class PriceActionTradingBot:
+    def __init__(self):
+        self._initialize_mt5_connection()
+        self.db = DatabaseManager(DB_CONFIG)
+        self.analyzer = MarketAnalyzer(SYMBOL, TIMEFRAME, MAX_SPREAD_POINTS)
+        self.executor = TradeExecutionManager(SYMBOL, MAGIC, RISK_PER_TRADE)
+        
+        self.today = self._get_utc_time().date()
+        self.daily_profit, self.daily_loss = 0.0, 0.0
+        self.processed_tickets = set()
+        self.active_contexts = {}
+        self.last_candle_time = None
+        self.entry_ready_at = None
+        self.loop_count = 0
+        self.max_floating_pnl = 0.0
+
+    def _initialize_mt5_connection(self) -> None:
+        for i in range(1, MAX_RECONNECT + 1):
+            if mt5.initialize():
+                acc = mt5.account_info()
+                if acc and acc.trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO:
+                    print(f"🔒 [System] Connected to MT5 Demo Server (พอร์ต: {acc.login})")
+                    return
+                else:
+                    print("🛑 [System] Critical Error: Live account detected. Shutdown safe-lock active.")
+                    mt5.shutdown(); exit()
+            print(f"⚠️ [System] Connection failed. Retrying ({i}/{MAX_RECONNECT})..."); time.sleep(RECONNECT_WAIT)
+        raise RuntimeError("❌ Cannot connect to MetaTrader 5 Terminal")
+
+    def _get_utc_time(self) -> datetime:
+        return datetime.now(tz=timezone.utc)
+
+    def _is_market_open(self) -> bool:
+        return TRADING_HOUR_START <= self._get_utc_time().hour < TRADING_HOUR_END
+
+    def _is_trade_reversing(self, side: str, position) -> bool:
+        tick = mt5.symbol_info_tick(SYMBOL)
+        if not tick or not position:
+            return False
+
+        current_price = float(tick.bid if side == 'BUY' else tick.ask)
+        entry_price = float(position.price_open)
+
+        if side == 'BUY':
+            if current_price <= entry_price:
+                return True
+        else:
+            if current_price >= entry_price:
+                return True
+
+        # ตรวจสอบทิศทางแท่งเทียนล่าสุดเพื่อจับ reversal เริ่มต้น
+        try:
+            df = self.analyzer.fetch_market_data(bars_count=3)
+            last = df.iloc[-1]
+            prev = df.iloc[-2]
+            last_close = float(last['close'])
+            last_open = float(last['open'])
+            prev_close = float(prev['close'])
+
+            if side == 'BUY' and last_close < last_open and last_close < prev_close:
+                return True
+            if side == 'SELL' and last_close > last_open and last_close > prev_close:
+                return True
+        except Exception:
+            pass
+
+        return False
+
+    def check_and_reset_daily_limits(self) -> None:
+        current_date = self._get_utc_time().date()
+        if current_date != self.today:
+            print(f"🌅 [System] New trading day started: {current_date}")
+            self.today = current_date
+            self.daily_profit, self.daily_loss = 0.0, 0.0
+            self.loop_count = 0
+
+    def audit_closed_positions(self) -> None:
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        deals = mt5.history_deals_get(now - timedelta(hours=24), now) or []
+        
+        for d in deals:
+            # สังเกตว่า or d.magic != MAGIC ถูกปิดไว้อยู่
+            if d.entry != mt5.DEAL_ENTRY_OUT  or d.ticket in self.processed_tickets:
+                continue
+                
+            self.processed_tickets.add(d.ticket)
+            direction = "BUY" if d.type == mt5.ORDER_TYPE_BUY else "SELL"
+            ctx = self.active_contexts.get(d.position_id, {"rsi": 50.0, "atr": 0.0, "score": 5, "htf": "PA_Engine"})
+            
+            self.db.save_trade(d.ticket, SYMBOL, direction, d.profit, ctx)
+            
+            if d.profit >= 0:
+                self.daily_profit += d.profit
+            else:
+                self.daily_loss += d.profit
+                
+            if d.position_id in self.active_contexts:
+                del self.active_contexts[d.position_id]
+
+    def print_dashboard(self) -> None:
+        sep = "═" * 60
+        print(f"\n{sep}\n 📊 PRICE ACTION OOP LIVE DASHBOARD\n{sep}")
+        print(f" ⏱️ เวลาสากล (UTC): {self._get_utc_time().strftime('%H:%M:%S')} | ไทม์เฟรม: M5")
+        print(f" 💰 กำไรวันนี้: ${self.daily_profit:.2f} | ขาดทุนวันนี้: ${self.daily_loss:.2f}")
+        print(f" 🔒 ขีดจำกัดเป้าหมาย: Target +${DAILY_PROFIT_TARGET:.2f} / Risk Max ${DAILY_LOSS_LIMIT:.2f}")
+        print(sep)
+
+    def start_engine(self) -> None:
+        print("🚀 Price Action Trading Robot OOP Engine is running...")
         while True:
-            self._loop_count += 1
+            self.loop_count += 1
             try:
-                self._ensure_connected()
-                self._check_account_type()
-                if self._utc_now().date() != self.today:
-                    self.today, self.daily_trades, self.daily_profit_total, self.daily_loss_total, self.daily_profit_halt, self.daily_loss_halt, self.last_candle_time, self._loop_count = self._utc_now().date(), 0, 0.0, 0.0, False, False, None, 0
-                    self.analyzer.print_report("(เริ่มต้นวันใหม่)")
-                self.update_trailing_stops()
-                self.track_closed_trades()
-                if self.daily_loss_halt or self.daily_profit_halt: time.sleep(60); continue
-                if self.has_open_position(): self.check_profit_target(); time.sleep(30); continue
-                if not self._is_trading_hours(): time.sleep(60); continue
-                df = self.add_indicators(self.get_data(TIMEFRAME))
-                if df['time'].iloc[-1] == self.last_candle_time: time.sleep(30); continue
-                self.last_candle_time = df['time'].iloc[-1]
-                signal = self.analyze(df)
-                if signal: self.place_trade(signal, df)
-                if self._loop_count % DASHBOARD_EVERY_N_LOOPS == 0: self.analyzer.print_report(f"(periodic — loop #{self._loop_count})")
-            except Exception as e:
-                print(f"❌ ERROR: {e}"); time.sleep(RECONNECT_WAIT); self._connect()
-            time.sleep(60)
+                mt5.initialize() 
+                self.check_and_reset_daily_limits()
+                self.executor.manage_trailing_stop()
+                self.audit_closed_positions()
 
+                if self.daily_loss <= DAILY_LOSS_LIMIT or self.daily_profit >= DAILY_PROFIT_TARGET:
+                    print("⏸️ [Trade] Daily limit reached, skipping new entries")
+                    time.sleep(5); continue
+
+                # 🧠 ระบบคำนวณเวลาถอยหลัง 10 วินาทีสุดท้าย และการปิดออเดอร์แบบ Scalping
+                now = self._get_utc_time()
+                minutes_to_next = 5 - (now.minute % 5)
+                next_candle_time = (now + timedelta(minutes=minutes_to_next)).replace(second=0, microsecond=0)
+                seconds_to_next = (next_candle_time - now).total_seconds()
+
+                if not self.executor.has_open_position():
+                    self.max_floating_pnl = 0.0
+
+                if self.executor.has_open_position():
+                    acc = mt5.account_info()
+                    if acc:
+                        floating_pnl = acc.equity - acc.balance
+                        self.max_floating_pnl = max(self.max_floating_pnl, floating_pnl)
+                        position = self.executor.get_active_positions()[0] if self.executor.get_active_positions() else None
+                        position_side = None
+                        if position:
+                            position_side = 'BUY' if position.type == mt5.ORDER_TYPE_BUY else 'SELL'
+
+                        # 🟢 รอจนกำไรถึง $1.00 แล้วปิด
+                        if floating_pnl >= 1.00:
+                            self.executor.close_all_orders("TARGET_PROFIT_1USD")
+                            print(f"💰 [Trade] ปิดกำไรที่เป้า $1.00: ${floating_pnl:.2f}")
+
+                        # 🔴 ถ้ากำไรเคยสูงกว่าแล้วลดลงกว่า 0.20 USD จาก peak แต่ยังไม่ถึงเป้า ให้ปิดทันที
+                        elif floating_pnl > 0 and self.max_floating_pnl >= 0.50 and \
+                             self.max_floating_pnl - floating_pnl >= 0.20 and floating_pnl < 1.00:
+                            self.executor.close_all_orders("EARLY_PROFIT_DRAWDOWN")
+                            print(f"✂️ [Trade] กำไรเริ่มถอยจาก peak {self.max_floating_pnl:.2f} -> {floating_pnl:.2f}, ปิดก่อนลงต่อ")
+
+                        # 🔴 ถ้าเวลากำลังจะต่อ candle ใหม่และยังขาดทุน ให้ปิด
+                        elif seconds_to_next <= 10 and floating_pnl < 0:
+                            self.executor.close_all_orders("LOSS_CUT_10SEC_BEFORE_CANDLE")
+                            print(f"✂️ [Trade] หมดเวลายื้อ! ยอมตัดขาดทุนก่อนขึ้นแท่งใหม่: ${floating_pnl:.2f}")
+
+                    time.sleep(1); continue 
+
+                if not self._is_market_open():
+                    print("⏸️ [Trade] Outside trading hours")
+                    time.sleep(5); continue
+
+                if not self.analyzer.is_spread_valid():
+                    print("⏸️ [Trade] Spread too wide for entry")
+                    time.sleep(5); continue
+
+                # 🟢 ดึงราคากราฟสแกนสด
+                df = self.analyzer.fetch_market_data(bars_count=60)
+                current_candle_time = df['time'].iloc[-1]
+                latest_candle = df.iloc[-1].to_dict()
+                self.db.save_candle(SYMBOL, TIMEFRAME, latest_candle)
+                history_df = self.db.load_recent_candles(SYMBOL, TIMEFRAME, limit=20)
+                
+                if history_df.empty or not self.db.db_ready:
+                    history_df = df.copy()
+                    print("🧠 [Trade] Database unavailable or empty, using live MT5 candle data for fallback")
+
+                # ถ้าแท่งเทียนเปลี่ยนแท่งใหม่
+                if current_candle_time != self.last_candle_time:
+                    self.last_candle_time = current_candle_time
+                    self.entry_ready_at = self._get_utc_time() + timedelta(seconds=30)
+                    print(f"🆕 [Trade] แท่งเทียนใหม่มาแล้ว! บอทจะเริ่มสแกนสัญญาณในอีก 30 วินาที...")
+
+                # 🧠 คัดกรองสัญญาณเข้าเทรดเฉพาะสัญญาณคุณภาพ (เพิ่ม Smart Guess จาก DB)
+                if self.entry_ready_at and not self.executor.has_open_position() and self._get_utc_time() >= self.entry_ready_at:
+                    chosen_signal = None
+                    reason = ""
+                    
+                    # 1) ประเมินสัญญาณจากโซนอุปสงค์อุปทาน (Supply/Demand)
+                    zone_signal = self.analyzer.analyze_zones_and_signals(df)
+                    if zone_signal:
+                        chosen_signal = zone_signal
+                        reason = "PA zone signal"
+                    else:
+                        # 2) ประเมินสัญญาณจากเส้นค่าเฉลี่ยและ RSI (EMA/RSI Breakout)
+                        sig, sig_reason = self.analyzer.analyze_candle_signal(history_df)
+                        if sig:
+                            chosen_signal = sig
+                            reason = f"EMA/RSI signal: {sig_reason}"
+                        else:
+                            # 3) 🧠 Smart Guess จากข้อมูล Database 20 แท่งย้อนหลัง
+                            try:
+                                if not history_df.empty and len(history_df) >= 2:
+                                    # ดึงราคาปิดทั้งหมดมาคำนวณหาค่าเฉลี่ย (เหมือนเส้น SMA 20)
+                                    avg_close = history_df['close'].astype(float).mean()
+                                    last_close = float(history_df['close'].iloc[-1])
+                                    prev_close = float(history_df['close'].iloc[-2])
+                                    
+                                    # 🧮 คำนวณ RSI จากข้อมูล history_df
+                                    history_closes = pd.to_numeric(history_df['close'], errors='coerce').astype(float)
+                                    history_rsi = self.analyzer._rsi(history_closes, 14)
+                                    history_rsi_value = float(history_rsi.iloc[-1]) if not history_rsi.empty else 50.0
+                                    
+                                    # เงื่อนไข BUY: ราคาปัจจุบันต้องยืน "เหนือ" ค่าเฉลี่ย 20 แท่ง AND แท่งล่าสุดมีแรงซื้อ AND RSI < 70 (ไม่ Overbought)
+                                    if last_close > avg_close and last_close > prev_close and history_rsi_value < 70:
+                                        chosen_signal = 'BUY'
+                                        reason = f"DB Smart Guess: ยืนเหนือ SMA ({last_close:.2f} > {avg_close:.2f}) + RSI {history_rsi_value:.1f} < 70"
+                                        
+                                    # เงื่อนไข SELL: ราคาปัจจุบันต้องอยู่ "ใต้" ค่าเฉลี่ย 20 แท่ง AND แท่งล่าสุดมีแรงขาย AND RSI > 30 (ไม่ Oversold)
+                                    elif last_close < avg_close and last_close < prev_close and history_rsi_value > 30:
+                                        chosen_signal = 'SELL'
+                                        reason = f"DB Smart Guess: หลุดใต้ SMA ({last_close:.2f} < {avg_close:.2f}) + RSI {history_rsi_value:.1f} > 30"
+                                        
+                                    else:
+                                        # ถ้าราคาพันเจลากับเส้นค่าเฉลี่ย หรือ RSI อยู่ Overbought/Oversold บอทจะไม่เทรด
+                                        chosen_signal = None
+                                        reason = f"DB Data: กราฟแกว่งตัว หรือ RSI {history_rsi_value:.1f} ไม่ตรงเงื่อนไข (BUY<70, SELL>30)"
+                                else:
+                                    chosen_signal = None
+                                    reason = "DB Data: ข้อมูลไม่เพียงพอสำหรับทำ Smart Guess"
+                            except Exception as e:
+                                chosen_signal = None
+                                reason = f"DB Guess Error: {e}"
+
+                    if chosen_signal:
+                        candle_height = float(df['atr'].iloc[-1])
+                        # 🧮 ใช้ history_rsi_value (จาก history_df) ให้ Consistent
+                        # และคำนวณ ATR จริงๆ สำหรับบันทึก
+                        closes = pd.to_numeric(df['close'], errors='coerce').astype(float)
+                        
+                        # ATR ที่ถูกต้อง = ค่าเฉลี่ยของ High-Low ย้อนหลัง 14 แท่ง
+                        highs = pd.to_numeric(df['high'], errors='coerce').astype(float)
+                        lows = pd.to_numeric(df['low'], errors='coerce').astype(float)
+                        tr = np.maximum(highs - lows, np.maximum(abs(highs - closes.shift()), abs(lows - closes.shift())))
+                        atr = tr.rolling(window=14).mean()
+                        atr_value = float(atr.iloc[-1]) if not atr.empty else candle_height
+                        
+                        # ✅ ส่ง history_rsi_value (ค่าที่ตรงกับการตัดสินใจเข้าเทรด)
+                        result = self.executor.execute_market_order(chosen_signal, candle_height, rsi_value=history_rsi_value, atr_value=atr_value)
+                        ticket, entry_price, saved_rsi, saved_atr = result if result[0] is not None else (result[0], result[1], history_rsi_value, atr_value)
+                        if ticket:
+                            self.active_contexts[ticket] = {"rsi": saved_rsi if saved_rsi else history_rsi_value, "atr": saved_atr if saved_atr else atr_value, "score": 5, "htf": "PA_OOP_PA"}
+                            print(f"✅ [Trade] Entry triggered: {chosen_signal} because {reason}")
+                        else:
+                            print(f"❌ [Trade] Failed to place order for {chosen_signal} (reason: {reason})")
+                    else:
+                        print(f"⏸️ [Trade] No high-quality entry signal found. Waiting... (Reason: {reason})")
+
+                    # Reset entry window for next candle
+                    self.entry_ready_at = None
+
+                if self.loop_count % DASHBOARD_EVERY_N_LOOPS == 0:
+                    self.print_dashboard()
+
+            except Exception as e:
+                print(f"❌ [Core Error] Crash detected: {e}"); time.sleep(RECONNECT_WAIT)
+            
+            # หน่วงรอบสั้นๆ 5 วินาที เพื่อเช็กแท่งราคาต่อเนื่องตลอดเวลา
+            time.sleep(5)
+
+# ==========================================
+# 🏁 APPLICATION ENTRY POINT
+# ==========================================
 if __name__ == "__main__":
-    AIBot().run()
+    bot = PriceActionTradingBot()
+    bot.start_engine()

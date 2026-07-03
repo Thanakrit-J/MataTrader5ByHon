@@ -1,104 +1,116 @@
-# MetaTrader 5 Trading Bot
+# MetaTrader 5 Candle-Based Trading Bot
 
-This is an automated trading bot for MetaTrader 5 that implements an EMA crossover strategy with RSI confirmation and ATR volatility filtering.
+This repository contains a Python trading bot for MetaTrader 5 that trades `XAUUSD` on the `M5` timeframe. It is built for demo use only and combines live MT5 candle data with PostgreSQL candle history for signal evaluation, logging, and a fallback live-data mode.
 
-## Features
+## Overview
 
-- **Strategy**: EMA 10/20 crossover with RSI confirmation (<40 buy, >60 sell)
-- **Volatility Filter**: ATR-based filtering for trending markets only
-- **Risk Management**:
-  - Position sizing: 1-2% risk per trade
-  - Stop-loss and take-profit orders
-  - Trailing stops
-  - Max drawdown limit: 15%
-  - Daily loss limit: 5%
-  - Trade frequency controls (max 5 trades per day)
+The bot is designed to trade on every new 5-minute candle using a layered decision process:
 
-## Safety Features
+1. Detect a new M5 candle.
+2. Wait `30 seconds` after the candle starts.
+3. Prefer price-action zone signals first.
+4. Fallback to EMA/RSI breakout signals.
+5. If no signal exists, guess direction from the last two closes and still trade.
+6. Manage open positions with stop-loss, take-profit, trailing stop, and early exit rules.
 
-- Demo mode only by default
-- Connection validation
-- Account balance checks
-- Emergency stop functionality
-- Comprehensive logging
+It also remains operational when PostgreSQL is unavailable by using live MT5 candle history directly.
 
-## Requirements
+## Main Files
 
-- MetaTrader 5 terminal installed and running
-- Python 3.7+
-- Demo account in MT5
+- `trading_bot.py`
+  - `DatabaseManager`: initializes PostgreSQL tables, saves candles, logs closed trades, and handles DB fallback.
+  - `MarketAnalyzer`: fetches live MT5 candles, computes EMA9/21 and RSI14, and generates zone and candle breakout signals.
+  - `TradeExecutionManager`: calculates lot size, sends market orders, adjusts trailing stops, and closes positions.
+  - `PriceActionTradingBot`: executes the main loop, manages trading hours, daily limits, candle timing, and exit logic.
+- `check_bot_status.py`: helper for verifying the bot environment and MT5 connectivity.
+- `trade_history.py`: helper for reviewing recent trade history from PostgreSQL.
+- `requirements.txt`: Python dependencies.
+- `docker-compose.yml`: PostgreSQL service setup.
 
-## Installation
+## Entry Logic
 
-1. **Install MetaTrader 5 Terminal**:
-   - Download from official MetaTrader 5 website
-   - Install and open the terminal
-   - Create a demo account
+The bot enters a new trade after a fresh candle is detected and `30 seconds` have passed.
 
-2. **Install Python Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
+Signal priority:
 
-3. **Configure the Bot**:
-   - Open `trading_bot.py`
-   - Ensure `DEMO_MODE = True` (default)
-   - Adjust parameters if needed (symbol, risk settings, etc.)
+1. `MarketAnalyzer.analyze_zones_and_signals()`
+   - Detects demand/supply zone tests and reversal patterns.
+2. `MarketAnalyzer.analyze_candle_signal()`
+   - Uses EMA9/21 and RSI14 to confirm breakout momentum.
+3. Fallback guess
+   - Chooses `BUY` when the last close is above the previous close; otherwise `SELL`.
 
-## Usage
+## Exit Logic
 
-1. **Start MetaTrader 5 Terminal**:
-   - Open MT5 terminal
-   - Login to your demo account
-   - Ensure the terminal is running
+Open trade exit decisions include:
 
-2. **Run the Bot**:
-   ```bash
-   python trading_bot.py
-   ```
-
-3. **Monitor Logs**:
-   - Check `trading_bot.log` for activity
-   - Monitor MT5 terminal for orders
-
-## Configuration Parameters
-
-- `SYMBOL`: Trading pair (default: "EURUSD")
-- `TIMEFRAME`: Chart timeframe (default: M15)
-- `RISK_PER_TRADE`: Risk per trade (default: 2%)
-- `MAX_DRAWDOWN`: Max drawdown limit (default: 15%)
-- `DAILY_LOSS_LIMIT`: Daily loss limit (default: 5%)
-- `MAX_TRADES_PER_DAY`: Maximum trades per day (default: 5)
+- Close at `1.00 USD` profit.
+- Close early if profit peaked and then fell by `0.20 USD` before reaching the target.
+- Close on strong reversal conditions.
+- Close losing trades `10 seconds` before the next candle.
 
 ## Risk Management
 
-The bot includes multiple layers of risk management:
+- Demo-only enforcement: the bot shuts down if a live MT5 account is detected.
+- Spread check: only enters trades when current spread is within `MAX_SPREAD_POINTS`.
+- Daily limits:
+  - Profit target: `4.0 USD`
+  - Loss limit: `-3.0 USD`
+- Position sizing uses `RISK_PER_TRADE` and available margin.
 
-1. **Position Sizing**: Automatically calculates lot size based on account balance and stop-loss distance
-2. **Stop-Loss**: Every position has a stop-loss order
-3. **Take-Profit**: Profit targets to lock in gains
-4. **Trailing Stops**: Dynamic stop-loss that follows profitable trades
-5. **Drawdown Control**: Pauses trading if account drawdown exceeds 15%
-6. **Daily Loss Limit**: Stops trading if daily losses exceed 5%
-7. **Trade Frequency**: Limits to 5 trades per day to prevent overtrading
+## Database Behavior
 
-## Testing
+PostgreSQL is used for:
 
-- Always test in demo mode first
-- Monitor performance and logs
-- Adjust parameters based on backtesting results
-- Never switch to live trading without thorough testing
+- `candles`: candle history for signal evaluation.
+- `closed_trades`: logging results and context for closed trades.
 
-## Emergency Stop
+If the database is unavailable, the bot will still run using live MT5 candle data and print a fallback warning.
 
-- Press `Ctrl+C` to stop the bot gracefully
-- The bot will close all open positions on emergency stop
-- Check logs for any issues
+## Configuration
+
+Important settings in `trading_bot.py`:
+
+- `SYMBOL = "XAUUSD"`
+- `TIMEFRAME = mt5.TIMEFRAME_M5`
+- `RISK_PER_TRADE = 0.03`
+- `DAILY_PROFIT_TARGET = 4.0`
+- `DAILY_LOSS_LIMIT = -3.0`
+- `MAX_SPREAD_POINTS = 45`
+- `MAGIC = 20260702`
+- `TRADING_HOUR_START = 7`
+- `TRADING_HOUR_END = 20`
+
+## How to Run
+
+1. Start PostgreSQL:
+   ```powershell
+   docker-compose up -d
+   ```
+2. Install Python dependencies:
+   ```powershell
+   pip install -r requirements.txt
+   ```
+3. Open MetaTrader 5 and log into a demo account.
+4. Run the bot:
+   ```powershell
+   python trading_bot.py
+   ```
+
+## Notes for Developers
+
+- Main trading orchestration lives in `PriceActionTradingBot.start_engine()`.
+- `execute_market_order()` returns both ticket and entry price.
+- `self.max_floating_pnl` tracks the highest profit on an open trade.
+- The bot resets peak profit tracking whenever no position is open.
+- `DatabaseManager.save_candle()` uses `ON CONFLICT DO NOTHING` to avoid duplicate candle records.
+
+## Safety Notes
+
+- Use demo accounts only.
+- Review logs and monitor the bot closely before using any live strategy.
+- The bot is intended for experimentation and learning.
 
 ## Disclaimer
 
-This software is for educational purposes only. Trading involves substantial risk of loss. Past performance does not guarantee future results. Use at your own risk. The authors are not responsible for any financial losses incurred through the use of this software.
-
-## License
-
-MIT License# MataTrader5ByHon
+This project is for educational and experimental use only. Trading involves financial risk. Use it with caution and at your own responsibility.
