@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Approach B — สถาปัตยกรรม MT5 Gold AI Trading</title>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#161d2e; --ink:#e8edf7; --muted:#93a1bd;
+    --line:#33415e; --accent:#f5b301;
+    --data:#2f7dd1; --core:#22a06b; --ml:#a855f7; --exec:#ef5b6b;
+    --chip:#1f2940;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 50% -10%,#1b2438,#0f1420);
+       color:var(--ink);font:15px/1.5 "Segoe UI",Tahoma,system-ui,sans-serif;padding:28px}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 22px;font-size:13px}
+  .board{max-width:1120px;margin:0 auto}
+  .layer{border:1px solid var(--line);border-radius:14px;background:var(--panel);
+         padding:14px 16px;margin:0 0 14px;position:relative}
+  .layer > .tag{position:absolute;top:-11px;left:16px;font-size:11px;font-weight:700;
+       letter-spacing:.06em;padding:2px 10px;border-radius:999px;color:#0f1420}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:stretch}
+  .box{flex:1 1 200px;min-width:190px;background:var(--chip);border:1px solid var(--line);
+       border-radius:10px;padding:11px 13px}
+  .box b{display:block;font-size:14px;margin-bottom:3px}
+  .box small{color:var(--muted);font-size:12px;line-height:1.45;display:block}
+  .box .k{color:var(--accent);font-weight:600}
+  .flow{text-align:center;color:var(--muted);font-size:20px;margin:2px 0 -4px}
+  .tag.data{background:var(--data)} .tag.core{background:var(--core)}
+  .tag.ml{background:var(--ml)} .tag.exec{background:var(--exec)}
+  .l-data{border-color:#2f7dd1aa} .l-core{border-color:#22a06baa}
+  .l-ml{border-color:#a855f7aa} .l-exec{border-color:#ef5b6baa}
+  .shared{border:1px dashed var(--accent);border-radius:10px;padding:10px 12px;background:#f5b30110}
+  .shared .lbl{color:var(--accent);font-weight:700;font-size:12px;margin-bottom:8px}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-top:18px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:11px;height:11px;border-radius:3px;display:inline-block}
+  .fb{margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:10px 13px;
+      background:#161d2e;color:var(--muted);font-size:12.5px}
+  .fb b{color:var(--accent)}
+  .note{color:var(--muted);font-size:12px;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="board">
+  <h1>🥇 MT5 Gold AI Trading — สถาปัตยกรรม (แนวทาง B)</h1>
+  <p class="sub">หัวใจ: <b style="color:var(--accent)">Strategy + Feature + Cost model ชุดเดียว ใช้ร่วมกันทั้ง Backtest และ Live</b> → "สิ่งที่เทสต์ = สิ่งที่เทรดจริง" (ไม่มี train/live skew)</p>
+
+  <!-- LAYER 1: DATA -->
+  <div class="layer l-data">
+    <span class="tag data">1 · DATA</span>
+    <div class="row">
+      <div class="box"><b>MT5 Terminal</b><small>ดึงประวัติ XAUUSD ย้อนหลังหลายปี (M1/M5/M15/H1) ผ่าน <span class="k">copy_rates_range</span></small></div>
+      <div class="box"><b>Data Pipeline</b><small>ทำความสะอาด · จัดการ gap/วันหยุด · resample timeframe · ตรวจสอบความถูกต้อง</small></div>
+      <div class="box"><b>Data Store (Parquet)</b><small>ไฟล์ columnar เร็ว โหลดซ้ำได้ + คง PostgreSQL เดิมไว้ log เทรดสด</small></div>
+    </div>
+  </div>
+  <div class="flow">▼</div>
+
+  <!-- LAYER 2: SHARED CORE -->
+  <div class="layer l-core">
+    <span class="tag core">2 · SHARED CORE (ใช้ร่วมกัน)</span>
+    <div class="shared">
+      <div class="lbl">◆ โค้ดชุดเดียวที่ทั้งฝั่งวิจัย (ML) และฝั่งเทรดจริงเรียกใช้</div>
+      <div class="row">
+        <div class="box"><b>Feature Engineering</b><small>EMA/RSI/ATR · โครงสร้างราคา · zone · session/เวลา · volatility regime</small></div>
+        <div class="box"><b>Strategy Interface</b><small>รับ features → คืนสัญญาณ BUY/SELL/FLAT · เสียบได้ทั้ง rule-based และ ML</small></div>
+        <div class="box"><b>Cost Model</b><small><span class="k">spread + commission + slippage</span> จริง — จุดที่บอทเดิมมองข้าม</small></div>
+      </div>
+    </div>
+    <div class="flow">▼</div>
+    <div class="row">
+      <div class="box" style="flex-basis:100%"><b>Backtest Engine (event-driven)</b>
+        <small>เดินทีละแท่งบนแท่งที่ <span class="k">ปิดแล้ว</span> · จำลอง SL/TP/trailing · หักต้นทุนทุกไม้ →
+        รายงาน metric: Win rate · Profit Factor · Expectancy · Max Drawdown · Sharpe · จำนวนไม้</small></div>
+    </div>
+  </div>
+
+  <div class="row" style="margin:14px 0 4px">
+    <!-- LAYER 3: ML -->
+    <div class="layer l-ml" style="flex:1 1 48%;margin:0">
+      <span class="tag ml">3 · ML PIPELINE (research)</span>
+      <div class="row" style="flex-direction:column;gap:8px">
+        <div class="box"><b>Triple-Barrier Labeling</b><small>ติดป้ายแต่ละแท่ง: ราคาชน TP ก่อน / ชน SL ก่อน / หมดเวลา → เป้าหมายที่ตรงกับการเทรดจริง</small></div>
+        <div class="box"><b>LightGBM / XGBoost</b><small>โมเดล tabular บน CPU — เร็ว แม่น ตีความได้ (feature importance)</small></div>
+        <div class="box"><b>Walk-Forward Validation</b><small><span class="k">กัน overfitting/lookahead</span> · train อดีต → test อนาคตที่ยังไม่เห็น เลื่อนหน้าต่างไปเรื่อยๆ</small></div>
+        <div class="box"><b>Model Artifact</b><small>ค่าความน่าจะเป็น P(TP ก่อน SL) + เกณฑ์ความมั่นใจขั้นต่ำ</small></div>
+      </div>
+    </div>
+
+    <!-- LAYER 4: EXECUTION -->
+    <div class="layer l-exec" style="flex:1 1 48%;margin:0">
+      <span class="tag exec">4 · LIVE EXECUTION (demo)</span>
+      <div class="row" style="flex-direction:column;gap:8px">
+        <div class="box"><b>Live Bot (ซ่อมแล้ว)</b><small>แก้ NameError, ดึงแท่งล่าสุด, position sizing, ตัด "เดาแล้วเข้าทุกแท่ง"</small></div>
+        <div class="box"><b>เรียก Shared Core + Model</b><small>ใช้ Feature/Strategy/Cost <span class="k">ชุดเดียวกับ backtest</span> → ผลตรงกัน</small></div>
+        <div class="box"><b>MT5 Order (demo เท่านั้น)</b><small>ล็อคความปลอดภัย · ส่งออเดอร์ · จัดการ SL/TP/trailing</small></div>
+        <div class="box"><b>Trade Log → Data Store</b><small>บันทึกผลจริงกลับเข้าคลังข้อมูล เพื่อวิเคราะห์และเทรนรอบถัดไป</small></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="fb">🔁 <b>Feedback loop:</b> ผลเทรดสด (demo) ไหลกลับเข้า Data Store → เทียบกับที่ backtest ทำนายไว้ →
+     ปรับ feature/label/threshold → เทรนใหม่ → พิสูจน์ว่า "พลาดน้อยลง" ด้วยตัวเลข ก่อนตัดสินใจเรื่องเงินจริง</div>
+
+  <div class="legend">
+    <span><i class="dot" style="background:var(--data)"></i> Data</span>
+    <span><i class="dot" style="background:var(--core)"></i> Shared Core</span>
+    <span><i class="dot" style="background:var(--ml)"></i> ML / Research</span>
+    <span><i class="dot" style="background:var(--exec)"></i> Live Execution</span>
+    <span><i class="dot" style="background:var(--accent)"></i> โค้ดที่ backtest & live ใช้ร่วมกัน</span>
+  </div>
+  <p class="note">ไฟล์นี้เป็นสื่อประกอบการออกแบบ (ไม่ถูก commit) — เปิดด้วยเบราว์เซอร์เพื่อดู · ลบทิ้งได้ทุกเมื่อ</p>
+</div>
+</body>
+</html>
