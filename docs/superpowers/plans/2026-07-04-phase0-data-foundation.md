@@ -752,6 +752,7 @@ git commit -m "feat(phase0): parquet store + hashed manifest with contract snaps
 ```python
 # tests/test_pipeline.py
 from datetime import datetime, timezone
+import pandas as pd
 from mt5gold.data.pipeline import run_ingest
 from mt5gold.data.store import read_dataset
 from mt5gold.config import DataConfig
@@ -773,8 +774,9 @@ def test_run_ingest_end_to_end(tmp_path):
     assert manifest["tz_offset_hours"] == 2          # detected from account_info
     assert manifest["rows"] == len(df) > 0
     assert manifest["contract"]["contract_size"] == 100.0
-    # tz shift applied: first bar moved back 2h from broker stamp
-    assert df["time"].iloc[0] == rates["time"][0].__class__ and str(df["time"].dt.tz) == "UTC"
+    # tz shift applied: broker stamp 2020-01-01 00:00 UTC minus 2h offset
+    assert df["time"].iloc[0] == pd.Timestamp("2019-12-31 22:00", tz="UTC")
+    assert str(df["time"].dt.tz) == "UTC"
 
 
 def test_run_ingest_is_reproducible(tmp_path):
