@@ -13,3 +13,6 @@ $RECYCLE.BIN/
 
 # Python virtual environment
 venv/
+
+# Design diagrams (visual aids — kept local, not version-controlled)
+docs/diagrams/
