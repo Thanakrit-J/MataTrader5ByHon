@@ -1,7 +1,14 @@
 """CLI entrypoint: python scripts/fetch_data.py [--root data] [--start 2020-01-01]"""
 from __future__ import annotations
 import argparse
+import sys
 from datetime import datetime, timezone
+from pathlib import Path
+
+# Allow running as a plain script from the repo root: put the repo root (this
+# file's parent's parent) on sys.path so `import mt5gold` resolves.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from mt5gold.config import DataConfig
 from mt5gold.data.pipeline import run_ingest
 from mt5gold.live.broker import Mt5Broker
