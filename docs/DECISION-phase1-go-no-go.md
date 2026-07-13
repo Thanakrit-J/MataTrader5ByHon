@@ -29,7 +29,7 @@ spec §11 กำหนด Go/No-Go gate: ถ้ากลยุทธ์ baseline
 **ข้อสรุป:** ไม่มี edge — robust ข้าม timeframe/config, บนตัวอย่างใหญ่, และยังเป็น `commission=0` (มองโลกในแง่ดี จริงแย่กว่า)
 
 ## สินทรัพย์ที่ยังมีค่า (reusable)
-- `mt5gold/` — data pipeline, backtest engine, live loop ที่ **cost-honest, leakage-safe, parity-proven** (64 tests) ใช้กับ instrument/thesis อื่นได้
+- `mt5gold/` — data pipeline, backtest engine, live loop ที่ **cost-honest, leakage-safe, parity-proven** (63 tests) ใช้กับ instrument/thesis อื่นได้
 - Go/No-Go process (CI-aware) — ประเมินกลยุทธ์ใหม่ได้ทันทีผ่าน `sweep_baseline.py`
 - Live bot demo-locked + decision journal — พร้อมถ้ามีกลยุทธ์ที่มี edge ในอนาคต
 
