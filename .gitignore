@@ -23,5 +23,8 @@ __pycache__/
 # Anchored to repo root so it does not match the mt5gold/data/ source package.
 /data/
 
+# Live decision journals (runtime output of run_live.py)
+/journal/
+
 # Design diagrams (visual aids — kept local, not version-controlled)
 docs/diagrams/
