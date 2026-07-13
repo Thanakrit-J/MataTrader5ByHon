@@ -18,11 +18,14 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--root", default="data")
     p.add_argument("--symbol", default="XAUUSD")
+    p.add_argument("--timeframe", default="M1",
+                   help="base timeframe to fetch/store (M1/M5/M15/H1). Fetch the "
+                        "timeframe you will backtest when M1 history is shallow.")
     p.add_argument("--start", default="2020-01-01")
     p.add_argument("--end", default=None)
     args = p.parse_args()
 
-    cfg = DataConfig(symbol=args.symbol, base_timeframe="M1",
+    cfg = DataConfig(symbol=args.symbol, base_timeframe=args.timeframe,
                      history_start=args.start, history_end=args.end)
     path = run_ingest(Mt5Broker(), cfg, args.root,
                       created_utc=datetime.now(timezone.utc))

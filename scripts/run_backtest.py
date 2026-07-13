@@ -20,12 +20,16 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--root", default="data")
     p.add_argument("--symbol", default="XAUUSD")
-    p.add_argument("--timeframe", default="M15")
+    p.add_argument("--timeframe", default="M15", help="timeframe to trade/backtest on")
+    p.add_argument("--base-timeframe", default=None,
+                   help="stored dataset timeframe (default = --timeframe). Set to a "
+                        "finer TF (e.g. M1) to resample up to --timeframe.")
     p.add_argument("--out", default="artifacts")
     args = p.parse_args()
 
-    m1, manifest = read_dataset(args.root, args.symbol, "M1")
-    price = resample_ohlcv(m1, args.timeframe)
+    base_tf = args.base_timeframe or args.timeframe
+    stored, manifest = read_dataset(args.root, args.symbol, base_tf)
+    price = stored if base_tf == args.timeframe else resample_ohlcv(stored, args.timeframe)
     feats = build_features(price)
     feats["close"] = price["close"].values
     spec = manifest["contract"]
