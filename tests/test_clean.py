@@ -44,6 +44,20 @@ def test_clean_shifts_broker_offset_to_utc():
     assert cleaned["spread_anomaly"].dtype == bool
 
 
+def test_clean_imputes_nonpositive_spread():
+    # Real MT5 feeds report spread==0 on many bars; cleaning imputes the median
+    # of positive spreads and records provenance, so validation then passes.
+    df = _df(n=50, spread=20)
+    df.loc[10, "spread"] = 0
+    df.loc[11, "spread"] = 0
+    cleaned = clean_rates(df, broker_tz_offset_hours=0)
+    assert (cleaned["spread"] > 0).all()              # nothing non-positive remains
+    assert cleaned["spread_imputed"].dtype == bool
+    assert cleaned["spread_imputed"].sum() == 2        # two bars flagged
+    assert bool(cleaned.loc[10, "spread_imputed"]) is True
+    assert cleaned.loc[10, "spread"] == 20             # imputed to positive median
+
+
 def test_clean_flags_spread_spike():
     df = _df(n=50, spread=20)
     df.loc[25, "spread"] = 900                        # news-time blowout

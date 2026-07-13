@@ -28,6 +28,15 @@ def clean_rates(df: pd.DataFrame, broker_tz_offset_hours: int) -> pd.DataFrame:
     out = df.copy()
     out["time"] = out["time"] - pd.Timedelta(hours=broker_tz_offset_hours)
     out = out.sort_values("time").reset_index(drop=True)
+    # Real MT5 bar feeds frequently report spread==0 (the bar-level spread field
+    # is unreliable on many brokers) while the OHLC is valid. Treat non-positive
+    # spread as MISSING and impute the median of the positive spreads so cost
+    # modeling stays honest (spec §4.2). Provenance kept in `spread_imputed`.
+    out["spread"] = out["spread"].astype(float)
+    out["spread_imputed"] = out["spread"] <= 0
+    positive = out.loc[out["spread"] > 0, "spread"]
+    fill = float(positive.median()) if len(positive) else 1.0
+    out.loc[out["spread"] <= 0, "spread"] = fill
     validate_rates(out)
     # Flag anomalous spread via median absolute deviation (robust to outliers).
     med = out["spread"].median()
