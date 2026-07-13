@@ -14,7 +14,7 @@ def _json_safe(v):
 
 
 def go_no_go_verdict(metrics) -> tuple[bool, str]:
-    """Spec §11 Go/No-Go gate, CI-aware. An edge counts only if the bootstrap
+    """Spec section 11 Go/No-Go gate, CI-aware. An edge counts only if the bootstrap
     confidence interval clears break-even, not merely the point estimate:
     require the expectancy CI lower bound > 0 AND the profit-factor CI lower
     bound >= 1.0. A positive point estimate whose CI straddles zero is noise."""
@@ -24,12 +24,12 @@ def go_no_go_verdict(metrics) -> tuple[bool, str]:
     pf_lo, pf_hi = float(pf_ci[0]), float(pf_ci[1])
     proceed = exp_lo > 0.0 and pf_lo >= 1.0
     if proceed:
-        msg = (f"PROCEED to ML — B1 edge is statistically positive after costs "
+        msg = (f"PROCEED to ML - B1 edge is statistically positive after costs "
                f"(expectancy CI low={exp_lo:.3f} > 0, PF CI low={pf_lo:.3f} >= 1.0)")
     else:
-        msg = (f"STOP — B1 edge not distinguishable from break-even after costs "
+        msg = (f"STOP - B1 edge not distinguishable from break-even after costs "
                f"(expectancy CI=[{exp_lo:.3f}, {exp_hi:.3f}], "
-               f"PF CI=[{pf_lo:.3f}, {pf_hi:.3f}]); spec §11 gate")
+               f"PF CI=[{pf_lo:.3f}, {pf_hi:.3f}]); spec section 11 gate")
     return proceed, msg
 
 
