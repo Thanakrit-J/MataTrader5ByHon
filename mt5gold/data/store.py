@@ -6,10 +6,14 @@ from datetime import datetime
 from pathlib import Path
 import pandas as pd
 
+# Left = normalized snapshot key (what the engine/costs read); right = the actual
+# field name on MT5's symbol_info. Names differ from the plan because real MT5
+# exposes `trade_contract_size` (not `contract_size`) and the engine also needs
+# `point` for points->price conversion.
 _CONTRACT_FIELDS = {
-    "contract_size": "contract_size", "tick_size": "trade_tick_size",
-    "tick_value": "trade_tick_value", "volume_min": "volume_min",
-    "volume_max": "volume_max", "volume_step": "volume_step",
+    "point": "point", "contract_size": "trade_contract_size",
+    "tick_size": "trade_tick_size", "tick_value": "trade_tick_value",
+    "volume_min": "volume_min", "volume_max": "volume_max", "volume_step": "volume_step",
     "trade_stops_level": "trade_stops_level", "trade_freeze_level": "trade_freeze_level",
     "swap_long": "swap_long", "swap_short": "swap_short", "swap_mode": "swap_mode",
 }

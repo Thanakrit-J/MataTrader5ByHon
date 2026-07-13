@@ -21,7 +21,8 @@ def _clean_df():
 def test_contract_snapshot_captures_spec_fields():
     broker = FakeBroker(make_rates(datetime(2020, 1, 1, tzinfo=UTC), n=1))
     snap = contract_snapshot(broker, "XAUUSD")
-    assert snap["contract_size"] == 100.0
+    assert snap["contract_size"] == 100.0       # mapped from MT5 trade_contract_size
+    assert snap["point"] == 0.01                # engine needs point for points->price
     assert snap["swap_long"] == -3.0
     assert snap["account_currency"] == "USD"
 

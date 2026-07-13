@@ -41,8 +41,10 @@ class FakeBroker:
         return self._rates[(self._rates["time"] >= s) & (self._rates["time"] <= e)]
 
     def symbol_info(self, symbol):
+        # Field names mirror MT5's real symbol_info (e.g. trade_contract_size,
+        # not contract_size) so the fake exercises the same mapping as production.
         return {
-            "point": 0.01, "digits": 2, "contract_size": 100.0,
+            "point": 0.01, "digits": 2, "trade_contract_size": 100.0,
             "volume_min": 0.01, "volume_max": 50.0, "volume_step": 0.01,
             "trade_stops_level": 0, "trade_freeze_level": 0,
             "swap_long": -3.0, "swap_short": -1.0, "swap_mode": 1,
