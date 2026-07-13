@@ -14,5 +14,14 @@ $RECYCLE.BIN/
 # Python virtual environment
 venv/
 
+# Python caches
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Generated datasets (Parquet + manifest, spec §4.3) — reproducible, not committed
+# Anchored to repo root so it does not match the mt5gold/data/ source package.
+/data/
+
 # Design diagrams (visual aids — kept local, not version-controlled)
 docs/diagrams/
