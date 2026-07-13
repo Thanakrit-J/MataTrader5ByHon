@@ -13,7 +13,7 @@ from mt5gold.core.features import build_features
 from mt5gold.core.strategy import RuleBasedStrategy, LegacyReconstructionStrategy, StrategyConfig
 from mt5gold.core.costs import CostConfig
 from mt5gold.backtest.engine import BacktestConfig
-from mt5gold.backtest.baseline import run_and_freeze
+from mt5gold.backtest.baseline import run_and_freeze, go_no_go_verdict
 
 
 def main():
@@ -34,10 +34,13 @@ def main():
 
     b0 = run_and_freeze(LegacyReconstructionStrategy(scfg), "B0", feats, price, spec, cost, bt, dh, args.out)
     b1 = run_and_freeze(RuleBasedStrategy(scfg), "B1", feats, price, spec, cost, bt, dh, args.out)
-    print(f"B0 expectancy={b0['metrics']['expectancy']} PF={b0['metrics']['profit_factor']}")
-    print(f"B1 expectancy={b1['metrics']['expectancy']} PF={b1['metrics']['profit_factor']}")
-    verdict = "PROCEED to ML" if b1['metrics']['expectancy'] > 0 else "STOP — B1 has no edge (spec §11 gate)"
-    print(f"GO/NO-GO: {verdict}")
+    for art in (b0, b1):
+        m = art["metrics"]
+        print(f"{art['name']}: n_trades={m['n_trades']} expectancy={m['expectancy']:.3f} "
+              f"CI={m['expectancy_ci']} PF={m['profit_factor']:.3f} PF_CI={m['pf_ci']} "
+              f"maxDD={m['max_drawdown']:.1f}")
+    _, msg = go_no_go_verdict(b1["metrics"])
+    print(f"GO/NO-GO: {msg}")
 
 
 if __name__ == "__main__":

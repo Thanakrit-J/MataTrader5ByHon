@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 import json, numpy as np, pandas as pd
-from mt5gold.backtest.baseline import run_and_freeze
+from mt5gold.backtest.baseline import run_and_freeze, go_no_go_verdict
 from mt5gold.backtest.engine import BacktestConfig
 from mt5gold.core.costs import CostConfig
 from mt5gold.core.strategy import RuleBasedStrategy, StrategyConfig
@@ -25,3 +25,21 @@ def test_run_and_freeze_writes_artifact(tmp_path):
     saved = json.loads((tmp_path / "baseline_B1.json").read_text(encoding="utf-8"))
     assert saved["name"] == "B1" and saved["data_hash"] == "abc123"
     assert "expectancy" in saved["metrics"]
+
+
+def test_go_no_go_stops_when_ci_straddles_zero():
+    # positive point estimate but CI includes break-even -> STOP (this was the
+    # 6-week real-data case the naive point-estimate gate wrongly passed)
+    proceed, msg = go_no_go_verdict({"expectancy_ci": [-1.63, 5.41], "pf_ci": [0.85, 1.61]})
+    assert proceed is False and "STOP" in msg
+
+
+def test_go_no_go_proceeds_when_ci_clears_breakeven():
+    proceed, msg = go_no_go_verdict({"expectancy_ci": [0.5, 5.0], "pf_ci": [1.05, 1.8]})
+    assert proceed is True and "PROCEED" in msg
+
+
+def test_go_no_go_stops_when_pf_ci_below_one():
+    # expectancy CI clears zero but PF CI dips below 1.0 -> STOP
+    proceed, msg = go_no_go_verdict({"expectancy_ci": [0.1, 4.0], "pf_ci": [0.95, 1.5]})
+    assert proceed is False
